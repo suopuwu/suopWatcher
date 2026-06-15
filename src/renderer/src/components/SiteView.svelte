@@ -4,10 +4,21 @@
   import DiffView from './DiffView.svelte'
   import VisualDiff from './VisualDiff.svelte'
   import HistoryView from './HistoryView.svelte'
+  import SiteSettings from './SiteSettings.svelte'
 
-  let { site, onScanned }: { site: Site; onScanned: () => void } = $props()
+  let {
+    site,
+    onScanned,
+    onScan,
+    scanActive = false
+  }: {
+    site: Site
+    onScanned: () => void
+    onScan: (siteId: number) => Promise<void>
+    scanActive?: boolean
+  } = $props()
 
-  type Tab = 'diff' | 'search' | 'history'
+  type Tab = 'diff' | 'search' | 'history' | 'settings'
   type DiffMode = 'text' | 'visual'
 
   let tab = $state<Tab>('diff')
@@ -47,11 +58,14 @@
 
   async function scan() {
     scanning = true
-    await api.scan.run(site.id)
-    scanning = false
-    onScanned()
-    await loadDiff()
-    if (tab === 'history') loadHistory()
+    try {
+      await onScan(site.id)
+      await loadDiff()
+      if (tab === 'history') loadHistory()
+      onScanned()
+    } finally {
+      scanning = false
+    }
   }
 
   async function runSearch() {
@@ -101,8 +115,8 @@
         <h1>{site.name || new URL(site.url).hostname}</h1>
         <a class="site-url" href={site.url} onclick={(e) => e.preventDefault()}>{site.url}</a>
       </div>
-      <button class="scan-btn" onclick={scan} disabled={scanning}>
-        {#if scanning}
+      <button class="scan-btn" onclick={scan} disabled={scanning || scanActive}>
+        {#if scanning || scanActive}
           <span class="spin">↻</span> Scanning…
         {:else}
           ↻ Scan Now
@@ -115,6 +129,7 @@
         <button class:active={tab === 'diff'} onclick={() => switchTab('diff')}>Changes</button>
         <button class:active={tab === 'search'} onclick={() => switchTab('search')}>Search</button>
         <button class:active={tab === 'history'} onclick={() => switchTab('history')}>History</button>
+        <button class:active={tab === 'settings'} onclick={() => switchTab('settings')}>Settings</button>
       </nav>
 
       {#if tab === 'diff' && diffResult?.previous}
@@ -168,9 +183,11 @@
         {/if}
       </div>
 
+    {:else if tab === 'settings'}
+      <SiteSettings {site} onSaved={onScanned} />
+
     {:else if tab === 'history'}
       <div class="history-tabs">
-        <!-- Scan log list at the top, compact -->
         <div class="scan-log">
           {#each history as entry}
             <div class="log-row" class:log-error={!!entry.error}>
@@ -183,8 +200,6 @@
             </div>
           {/each}
         </div>
-
-        <!-- Iframe cards for unique versions -->
         <HistoryView snapshots={uniqueHistory} siteUrl={site.url} />
       </div>
     {/if}
@@ -250,9 +265,7 @@
     justify-content: space-between;
   }
 
-  .tabs {
-    display: flex;
-  }
+  .tabs { display: flex; }
 
   .tabs button {
     background: transparent;
@@ -289,14 +302,8 @@
     border-radius: 4px;
   }
 
-  .mode-toggle button.active {
-    background: var(--bg-3);
-    color: var(--text-0);
-  }
-
-  .mode-toggle button:hover:not(.active) {
-    color: var(--text-0);
-  }
+  .mode-toggle button.active { background: var(--bg-3); color: var(--text-0); }
+  .mode-toggle button:hover:not(.active) { color: var(--text-0); }
 
   .content {
     flex: 1;
@@ -347,7 +354,6 @@
 
   .result-row {
     display: flex;
-    gap: 0;
     font-family: var(--font-mono);
     font-size: 12px;
     line-height: 1.6;
@@ -419,10 +425,7 @@
     flex-shrink: 0;
   }
 
-  .hash {
-    color: var(--text-2);
-    font-family: var(--font-mono);
-  }
+  .hash { color: var(--text-2); font-family: var(--font-mono); }
 
   .log-err-msg {
     color: var(--red);

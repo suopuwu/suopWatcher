@@ -1,10 +1,20 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow, shell } from 'electron'
 import { diffLines } from 'diff'
 import { getDb } from './db'
-import { scanSite } from './scanner'
+import { scanSite, getScanConfig, processScan } from './scanner'
 
 export function registerIpcHandlers(): void {
   const db = getDb()
+
+  ipcMain.handle('shell:open', (_e, { url }: { url: string }) => shell.openExternal(url))
+
+  ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
+  ipcMain.on('window:maximize', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return
+    win.isMaximized() ? win.unmaximize() : win.maximize()
+  })
+  ipcMain.on('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
 
   ipcMain.handle('sites:list', () => {
     return db
@@ -50,18 +60,30 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('scan:run', async (_e, { siteId }: { siteId?: number }) => {
+    // Scan All: runs all sites silently in background BrowserWindows
     const sites = siteId
       ? (db.prepare('SELECT id, url FROM websites WHERE id = ?').all(siteId) as { id: number; url: string }[])
       : (db.prepare('SELECT id, url FROM websites').all() as { id: number; url: string }[])
 
-    const results = await Promise.all(
+    return Promise.all(
       sites.map(async (site) => {
         const result = await scanSite(site.id, site.url)
         return { siteId: site.id, url: site.url, ...result }
       })
     )
+  })
 
-    return results
+  ipcMain.handle('scan:get-config', (_e, { siteId }: { siteId: number }) =>
+    getScanConfig(siteId)
+  )
+
+  ipcMain.handle('scan:process', async (_e, { siteId, html, error }: { siteId: number; html: string; error?: string }) =>
+    processScan(siteId, html, error)
+  )
+
+  ipcMain.handle('sites:update', (_e, { id, scan_delay, actions }: { id: number; scan_delay: number; actions: object[] }) => {
+    db.prepare('UPDATE websites SET scan_delay = ?, actions = ? WHERE id = ?')
+      .run(scan_delay, JSON.stringify(actions), id)
   })
 
   ipcMain.handle('snapshots:diff', (_e, { siteId }: { siteId: number }) => {

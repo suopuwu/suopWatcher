@@ -11,16 +11,14 @@ function createWindow(): void {
     minWidth: 820,
     minHeight: 500,
     show: false,
-    autoHideMenuBar: true,
-    title: 'suopWatcher',
+    frame: false,
     backgroundColor: '#1a1b1e',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
   })
-
-  win.setMenu(null)
 
   win.on('ready-to-show', () => win.show())
 

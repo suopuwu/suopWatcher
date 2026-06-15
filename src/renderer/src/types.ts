@@ -6,6 +6,16 @@ export interface Site {
   last_scanned: number | null
   last_error: string | null
   has_changes: 0 | 1
+  scan_delay: number
+  actions: string // JSON ScanAction[]
+}
+
+export interface ScanAction {
+  type: 'wait' | 'click_selector' | 'click_text' | 'type' | 'key'
+  ms?: number
+  selector?: string
+  text?: string
+  key?: string
 }
 
 export interface Snapshot {

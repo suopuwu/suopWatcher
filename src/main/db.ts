@@ -31,12 +31,15 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_snapshots_site ON snapshots(website_id, scanned_at DESC);
   `)
 
-  // Migration: add raw_html column if not present (existing rows get empty string)
   try {
     db.exec(`ALTER TABLE snapshots ADD COLUMN raw_html TEXT NOT NULL DEFAULT ''`)
-  } catch {
-    // column already exists
-  }
+  } catch { /* already exists */ }
+  try {
+    db.exec(`ALTER TABLE websites ADD COLUMN scan_delay INTEGER NOT NULL DEFAULT 0`)
+  } catch { /* already exists */ }
+  try {
+    db.exec(`ALTER TABLE websites ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'`)
+  } catch { /* already exists */ }
 }
 
 export function getDb(): Database.Database {
