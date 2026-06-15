@@ -8,6 +8,15 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('shell:open', (_e, { url }: { url: string }) => shell.openExternal(url))
 
+  ipcMain.handle('settings:get', (_e, { key }: { key: string }) => {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return row ? JSON.parse(row.value) : null
+  })
+
+  ipcMain.handle('settings:set', (_e, { key, value }: { key: string; value: unknown }) => {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value))
+  })
+
   ipcMain.on('window:minimize', (e) => BrowserWindow.fromWebContents(e.sender)?.minimize())
   ipcMain.on('window:maximize', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender)

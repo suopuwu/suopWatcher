@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('api', {
   shell: {
     open: (url: string) => ipcRenderer.invoke('shell:open', { url })
   },
+  settings: {
+    get: (key: string) => ipcRenderer.invoke('settings:get', { key }),
+    set: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', { key, value })
+  },
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     maximize: () => ipcRenderer.send('window:maximize'),

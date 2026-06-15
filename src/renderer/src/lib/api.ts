@@ -5,6 +5,10 @@ const w = window as Window & {
     shell: {
       open: (url: string) => Promise<void>
     }
+    settings: {
+      get: (key: string) => Promise<unknown>
+      set: (key: string, value: unknown) => Promise<void>
+    }
     window: {
       minimize: () => void
       maximize: () => void
