@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   snapshots: {
     diff: (siteId: number) => ipcRenderer.invoke('snapshots:diff', { siteId }),
     history: (siteId: number) => ipcRenderer.invoke('snapshots:history', { siteId }),
+    uniqueHistory: (siteId: number) => ipcRenderer.invoke('snapshots:unique-history', { siteId }),
     search: (siteId: number, pattern: string, isRegex: boolean) =>
       ipcRenderer.invoke('snapshots:search', { siteId, pattern, isRegex })
   }

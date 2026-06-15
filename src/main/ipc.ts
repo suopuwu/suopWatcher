@@ -27,15 +27,22 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('sites:add', (_e, { url, name }: { url: string; name?: string }) => {
+    const trimmed = url.trim()
     try {
-      new URL(url)
+      new URL(trimmed)
     } catch {
       throw new Error('Invalid URL')
     }
-    const result = db
-      .prepare('INSERT INTO websites (url, name) VALUES (?, ?) RETURNING *')
-      .get(url.trim(), name?.trim() || null) as object
-    return result
+    try {
+      return db
+        .prepare('INSERT INTO websites (url, name) VALUES (?, ?) RETURNING *')
+        .get(trimmed, name?.trim() || null) as object
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && 'code' in err && err.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        throw new Error('This URL is already in your watchlist')
+      }
+      throw err
+    }
   })
 
   ipcMain.handle('sites:delete', (_e, { id }: { id: number }) => {
@@ -60,9 +67,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('snapshots:diff', (_e, { siteId }: { siteId: number }) => {
     const rows = db
       .prepare(
-        'SELECT * FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 2'
+        'SELECT id, content, content_hash, scanned_at, raw_html FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 2'
       )
-      .all(siteId) as Array<{ id: number; content: string; content_hash: string; scanned_at: number }>
+      .all(siteId) as Array<{ id: number; content: string; content_hash: string; scanned_at: number; raw_html: string }>
 
     if (rows.length === 0) return null
 
@@ -88,6 +95,23 @@ export function registerIpcHandlers(): void {
     return db
       .prepare(
         'SELECT id, scanned_at, content_hash, error FROM snapshots WHERE website_id = ? ORDER BY scanned_at DESC LIMIT 50'
+      )
+      .all(siteId)
+  })
+
+  // Last 5 unique content versions (by hash) with raw HTML for iframe display
+  ipcMain.handle('snapshots:unique-history', (_e, { siteId }: { siteId: number }) => {
+    return db
+      .prepare(
+        `SELECT s.id, s.scanned_at, s.content_hash, s.raw_html
+         FROM snapshots s
+         WHERE s.id IN (
+           SELECT MAX(id) FROM snapshots
+           WHERE website_id = ? AND error IS NULL
+           GROUP BY content_hash
+         )
+         ORDER BY s.scanned_at DESC
+         LIMIT 5`
       )
       .all(siteId)
   })

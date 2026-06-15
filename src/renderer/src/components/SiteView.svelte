@@ -1,15 +1,20 @@
 <script lang="ts">
   import { api } from '../lib/api'
-  import type { Site, DiffResult, HistoryEntry, SearchResult } from '../types'
+  import type { Site, DiffResult, HistoryEntry, UniqueSnapshot, SearchResult } from '../types'
   import DiffView from './DiffView.svelte'
+  import VisualDiff from './VisualDiff.svelte'
+  import HistoryView from './HistoryView.svelte'
 
   let { site, onScanned }: { site: Site; onScanned: () => void } = $props()
 
   type Tab = 'diff' | 'search' | 'history'
+  type DiffMode = 'text' | 'visual'
 
   let tab = $state<Tab>('diff')
+  let diffMode = $state<DiffMode>('text')
   let diffResult = $state<DiffResult | null>(null)
   let history = $state<HistoryEntry[]>([])
+  let uniqueHistory = $state<UniqueSnapshot[]>([])
   let searchQuery = $state('')
   let isRegex = $state(false)
   let searchResults = $state<SearchResult[]>([])
@@ -32,7 +37,12 @@
   }
 
   async function loadHistory() {
-    history = await api.snapshots.history(site.id)
+    const [hist, unique] = await Promise.all([
+      api.snapshots.history(site.id),
+      api.snapshots.uniqueHistory(site.id)
+    ])
+    history = hist
+    uniqueHistory = unique
   }
 
   async function scan() {
@@ -41,6 +51,7 @@
     scanning = false
     onScanned()
     await loadDiff()
+    if (tab === 'history') loadHistory()
   }
 
   async function runSearch() {
@@ -57,7 +68,7 @@
 
   function switchTab(t: Tab) {
     tab = t
-    if (t === 'history' && history.length === 0) loadHistory()
+    if (t === 'history') loadHistory()
     if (t === 'search') searchResults = []
   }
 
@@ -99,11 +110,20 @@
       </button>
     </div>
 
-    <nav class="tabs">
-      <button class:active={tab === 'diff'} onclick={() => switchTab('diff')}>Changes</button>
-      <button class:active={tab === 'search'} onclick={() => switchTab('search')}>Search</button>
-      <button class:active={tab === 'history'} onclick={() => switchTab('history')}>History</button>
-    </nav>
+    <div class="tabs-row">
+      <nav class="tabs">
+        <button class:active={tab === 'diff'} onclick={() => switchTab('diff')}>Changes</button>
+        <button class:active={tab === 'search'} onclick={() => switchTab('search')}>Search</button>
+        <button class:active={tab === 'history'} onclick={() => switchTab('history')}>History</button>
+      </nav>
+
+      {#if tab === 'diff' && diffResult?.previous}
+        <div class="mode-toggle">
+          <button class:active={diffMode === 'text'} onclick={() => (diffMode = 'text')}>Text</button>
+          <button class:active={diffMode === 'visual'} onclick={() => (diffMode = 'visual')}>Visual</button>
+        </div>
+      {/if}
+    </div>
   </header>
 
   <div class="content">
@@ -114,6 +134,8 @@
         <p class="status">No scans yet. Click "Scan Now" to fetch this page.</p>
       {:else if !diffResult.previous}
         <p class="status">First scan complete. Scan again to detect changes.</p>
+      {:else if diffMode === 'visual'}
+        <VisualDiff previous={diffResult.previous} latest={diffResult.latest} siteUrl={site.url} />
       {:else}
         <DiffView diff={diffResult.diff} />
       {/if}
@@ -147,21 +169,23 @@
       </div>
 
     {:else if tab === 'history'}
-      <div class="history-list">
-        {#if history.length === 0}
-          <p class="status">No scan history.</p>
-        {:else}
+      <div class="history-tabs">
+        <!-- Scan log list at the top, compact -->
+        <div class="scan-log">
           {#each history as entry}
-            <div class="history-row" class:error={!!entry.error}>
+            <div class="log-row" class:log-error={!!entry.error}>
               <span class="ts">{formatDate(entry.scanned_at)}</span>
               {#if entry.error}
-                <span class="hist-err">{entry.error}</span>
+                <span class="log-err-msg">{entry.error}</span>
               {:else}
                 <span class="hash">{entry.content_hash.slice(0, 12)}</span>
               {/if}
             </div>
           {/each}
-        {/if}
+        </div>
+
+        <!-- Iframe cards for unique versions -->
+        <HistoryView snapshots={uniqueHistory} siteUrl={site.url} />
       </div>
     {/if}
   </div>
@@ -211,9 +235,7 @@
     flex-shrink: 0;
   }
 
-  .scan-btn:hover:not(:disabled) {
-    background: var(--bg-hover);
-  }
+  .scan-btn:hover:not(:disabled) { background: var(--bg-hover); }
 
   .spin {
     display: inline-block;
@@ -222,9 +244,14 @@
 
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .tabs-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+
   .tabs {
     display: flex;
-    gap: 0;
   }
 
   .tabs button {
@@ -242,6 +269,33 @@
   .tabs button.active {
     color: var(--text-0);
     border-bottom-color: var(--accent);
+  }
+
+  .mode-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-2);
+    border-radius: var(--radius);
+    padding: 3px;
+    margin-bottom: 6px;
+  }
+
+  .mode-toggle button {
+    background: transparent;
+    color: var(--text-1);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 4px;
+  }
+
+  .mode-toggle button.active {
+    background: var(--bg-3);
+    color: var(--text-0);
+  }
+
+  .mode-toggle button:hover:not(.active) {
+    color: var(--text-0);
   }
 
   .content {
@@ -300,9 +354,7 @@
     user-select: text;
   }
 
-  .result-row:hover {
-    background: var(--bg-2);
-  }
+  .result-row:hover { background: var(--bg-2); }
 
   .line-num {
     width: 52px;
@@ -334,29 +386,37 @@
   }
 
   /* History */
-  .history-list {
+  .history-tabs {
     flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  .history-row {
+  .scan-log {
+    max-height: 140px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .log-row {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 8px 20px;
-    font-size: 12px;
+    padding: 5px 20px;
+    font-size: 11px;
     border-bottom: 1px solid var(--border);
   }
 
-  .history-row:last-child { border-bottom: none; }
-
-  .history-row.error { background: var(--red-dim); }
+  .log-row:last-child { border-bottom: none; }
+  .log-row.log-error { background: var(--red-dim); }
 
   .ts {
     color: var(--text-1);
     white-space: nowrap;
     font-family: var(--font-mono);
+    flex-shrink: 0;
   }
 
   .hash {
@@ -364,9 +424,8 @@
     font-family: var(--font-mono);
   }
 
-  .hist-err {
+  .log-err-msg {
     color: var(--red);
-    font-size: 12px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

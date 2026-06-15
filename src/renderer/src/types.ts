@@ -14,7 +14,15 @@ export interface Snapshot {
   content: string
   content_hash: string
   scanned_at: number
+  raw_html: string
   error: string | null
+}
+
+export interface UniqueSnapshot {
+  id: number
+  scanned_at: number
+  content_hash: string
+  raw_html: string
 }
 
 export interface DiffLine {

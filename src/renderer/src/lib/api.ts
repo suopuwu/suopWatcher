@@ -1,4 +1,4 @@
-import type { Site, DiffResult, HistoryEntry, SearchResult, ScanResult } from '../types'
+import type { Site, DiffResult, HistoryEntry, UniqueSnapshot, SearchResult, ScanResult } from '../types'
 
 const w = window as Window & {
   api: {
@@ -13,6 +13,7 @@ const w = window as Window & {
     snapshots: {
       diff: (siteId: number) => Promise<DiffResult | null>
       history: (siteId: number) => Promise<HistoryEntry[]>
+      uniqueHistory: (siteId: number) => Promise<UniqueSnapshot[]>
       search: (siteId: number, pattern: string, isRegex: boolean) => Promise<SearchResult[] | { error: string }>
     }
   }

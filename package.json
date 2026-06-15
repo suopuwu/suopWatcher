@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder",
     "package:flatpak": "electron-vite build && electron-builder --linux flatpak",
+    "dist": "rm -rf out dist && electron-vite build && electron-builder --linux flatpak",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "devDependencies": {
@@ -55,7 +56,8 @@
         "--share=ipc",
         "--share=network",
         "--device=dri",
-        "--talk-name=org.freedesktop.Notifications"
+        "--talk-name=org.freedesktop.Notifications",
+        "--persist=."
       ]
     }
   }
