@@ -4,6 +4,7 @@ import { request as httpRequest } from 'http'
 import { URL } from 'url'
 import { BrowserWindow } from 'electron'
 import { getDb } from './db'
+import { buildActionScript } from '../shared/actionScripts'
 
 export interface ScanAction {
     type: 'wait' | 'click_selector' | 'click_text' | 'type' | 'key'
@@ -54,43 +55,14 @@ async function executeAction(win: BrowserWindow, action: ScanAction): Promise<vo
         case 'wait':
             await new Promise((r) => setTimeout(r, action.ms ?? 500))
             break
-
         case 'click_selector':
-            await wc.executeJavaScript(`
-        (() => {
-          const el = document.querySelector(${JSON.stringify(action.selector ?? '')})
-          if (el) el.click()
-        })()
-      `)
-            await new Promise((r) => setTimeout(r, 300))
-            break
-
         case 'click_text':
-            await wc.executeJavaScript(`
-        (() => {
-          const t = ${JSON.stringify(action.text ?? '')}
-          const el = [...document.querySelectorAll('a,button,[role="button"],input[type="submit"]')]
-            .find(e => e.textContent.trim().includes(t))
-          if (el) el.click()
-        })()
-      `)
+            await wc.executeJavaScript(buildActionScript(action)!)
             await new Promise((r) => setTimeout(r, 300))
             break
-
         case 'type':
-            await wc.executeJavaScript(`
-        (() => {
-          const el = document.querySelector(${JSON.stringify(action.selector ?? '')})
-          if (el) {
-            el.focus()
-            el.value = ${JSON.stringify(action.text ?? '')}
-            el.dispatchEvent(new Event('input', { bubbles: true }))
-            el.dispatchEvent(new Event('change', { bubbles: true }))
-          }
-        })()
-      `)
+            await wc.executeJavaScript(buildActionScript(action)!)
             break
-
         case 'key':
             wc.sendInputEvent({ type: 'keyDown', keyCode: action.key ?? 'Return' })
             wc.sendInputEvent({ type: 'keyUp', keyCode: action.key ?? 'Return' })
@@ -304,6 +276,26 @@ function extractText(html: string): string {
         .trim()
 }
 
+// ─── Snapshot storage ─────────────────────────────────────────────────────────
+
+async function saveContent(siteId: number, html: string, url: string): Promise<{ success: true; hasChanges: boolean }> {
+    const db = getDb()
+    const [inlinedHtml, text] = await Promise.all([inlinePageAssets(html, url), Promise.resolve(extractText(html))])
+    const hash = createHash('sha256').update(text).digest('hex')
+    const prev = db.prepare('SELECT content_hash FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
+        | { content_hash: string }
+        | undefined
+    db.prepare('INSERT INTO snapshots (website_id, content, content_hash, scanned_at, raw_html) VALUES (?, ?, ?, unixepoch(), ?)').run(
+        siteId, text, hash, inlinedHtml,
+    )
+    return { success: true, hasChanges: prev ? prev.content_hash !== hash : false }
+}
+
+function saveError(siteId: number, message: string): { success: false; hasChanges: false; error: string } {
+    getDb().prepare("INSERT INTO snapshots (website_id, content, content_hash, scanned_at, error) VALUES (?, '', '', unixepoch(), ?)").run(siteId, message)
+    return { success: false, hasChanges: false, error: message }
+}
+
 // ─── Main scan ────────────────────────────────────────────────────────────────
 
 // Returns scan config for renderer-side webview scanning
@@ -318,60 +310,21 @@ export function getScanConfig(siteId: number): { url: string; scan_delay: number
 
 // Processes HTML captured by the renderer webview: inlines assets, stores snapshot
 export async function processScan(siteId: number, html: string, error?: string): Promise<{ success: boolean; hasChanges: boolean; error?: string }> {
-    const db = getDb()
-    if (error) {
-        db.prepare("INSERT INTO snapshots (website_id, content, content_hash, scanned_at, error) VALUES (?, '', '', unixepoch(), ?)").run(siteId, error)
-        return { success: false, hasChanges: false, error }
-    }
+    if (error) return saveError(siteId, error)
     try {
-        const { url } = db.prepare('SELECT url FROM websites WHERE id = ?').get(siteId) as { url: string }
-        const [inlinedHtml, text] = await Promise.all([inlinePageAssets(html, url), Promise.resolve(extractText(html))])
-        const hash = createHash('sha256').update(text).digest('hex')
-        const prev = db.prepare('SELECT content_hash FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
-            | { content_hash: string }
-            | undefined
-        db.prepare('INSERT INTO snapshots (website_id, content, content_hash, scanned_at, raw_html) VALUES (?, ?, ?, unixepoch(), ?)').run(
-            siteId,
-            text,
-            hash,
-            inlinedHtml,
-        )
-        return { success: true, hasChanges: prev ? prev.content_hash !== hash : false }
+        const { url } = getDb().prepare('SELECT url FROM websites WHERE id = ?').get(siteId) as { url: string }
+        return await saveContent(siteId, html, url)
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        db.prepare("INSERT INTO snapshots (website_id, content, content_hash, scanned_at, error) VALUES (?, '', '', unixepoch(), ?)").run(siteId, message)
-        return { success: false, hasChanges: false, error: message }
+        return saveError(siteId, err instanceof Error ? err.message : String(err))
     }
 }
 
 export async function scanSite(siteId: number, url: string): Promise<{ success: boolean; hasChanges: boolean; error?: string }> {
-    const db = getDb()
     try {
-        const row = db.prepare('SELECT scan_delay, actions FROM websites WHERE id = ?').get(siteId) as { scan_delay: number; actions: string } | undefined
-
-        const delayMs = row?.scan_delay ?? 0
-        const actions: ScanAction[] = JSON.parse(row?.actions ?? '[]')
-
-        const raw = await renderPage(url, delayMs, actions)
-
-        const [inlinedHtml, text] = await Promise.all([inlinePageAssets(raw, url), Promise.resolve(extractText(raw))])
-        const hash = createHash('sha256').update(text).digest('hex')
-
-        const prev = db.prepare('SELECT content_hash FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
-            | { content_hash: string }
-            | undefined
-
-        db.prepare('INSERT INTO snapshots (website_id, content, content_hash, scanned_at, raw_html) VALUES (?, ?, ?, unixepoch(), ?)').run(
-            siteId,
-            text,
-            hash,
-            inlinedHtml,
-        )
-
-        return { success: true, hasChanges: prev ? prev.content_hash !== hash : false }
+        const row = getDb().prepare('SELECT scan_delay, actions FROM websites WHERE id = ?').get(siteId) as { scan_delay: number; actions: string } | undefined
+        const raw = await renderPage(url, row?.scan_delay ?? 0, JSON.parse(row?.actions ?? '[]'))
+        return await saveContent(siteId, raw, url)
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        db.prepare("INSERT INTO snapshots (website_id, content, content_hash, scanned_at, error) VALUES (?, '', '', unixepoch(), ?)").run(siteId, message)
-        return { success: false, hasChanges: false, error: message }
+        return saveError(siteId, err instanceof Error ? err.message : String(err))
     }
 }

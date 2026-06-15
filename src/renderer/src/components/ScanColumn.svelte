@@ -115,8 +115,8 @@
         <div class="log-entries">
             {#each scanLog as entry (entry.ts + entry.site)}
                 <div class="log-entry" class:log-err={!!entry.error} class:log-changed={entry.hasChanges && !entry.error}>
-                    <span class="log-dot"></span>
                     <span class="log-site">{entry.site}</span>
+                    <span class="log-status">{entry.error ? 'error' : entry.hasChanges ? 'changed' : 'no changes'}</span>
                     <span class="log-time">{formatLogTime(entry.ts)}</span>
                 </div>
             {:else}
@@ -280,20 +280,20 @@
         line-height: 1.3;
     }
 
-    .log-dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
-        background: var(--text-2);
+    .log-status {
+        font-size: 10px;
+        color: var(--text-2);
+        white-space: nowrap;
         flex-shrink: 0;
-        margin-top: 3px;
+        font-family: var(--font-mono);
+        margin-top: 1px;
     }
 
-    .log-changed .log-dot {
-        background: var(--yellow);
+    .log-changed .log-status {
+        color: var(--yellow);
     }
-    .log-err .log-dot {
-        background: var(--red);
+    .log-err .log-status {
+        color: var(--red);
     }
 
     .log-site {

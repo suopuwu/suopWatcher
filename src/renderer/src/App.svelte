@@ -1,7 +1,8 @@
 <script lang="ts">
     import { tick } from 'svelte'
     import { api } from './lib/api'
-    import type { Site, ScanAction, LogEntry } from './types'
+    import type { Site, LogEntry } from './types'
+    import { executeWebviewAction } from './lib/webviewActions'
     import HomeScreen from './components/HomeScreen.svelte'
     import SiteView from './components/SiteView.svelte'
     import ScanColumn from './components/ScanColumn.svelte'
@@ -51,50 +52,6 @@
     function clearLog() {
         scanLog = []
         api.settings.set('scan_log', [])
-    }
-
-    // ─── Webview action executor ──────────────────────────────────────────────
-
-    async function executeWebviewAction(wv: Wv, action: ScanAction): Promise<void> {
-        switch (action.type) {
-            case 'wait':
-                await new Promise((r) => setTimeout(r, action.ms ?? 500))
-                break
-            case 'click_selector':
-                await wv.executeJavaScript(`
-          (() => { const el = document.querySelector(${JSON.stringify(action.selector ?? '')}); if (el) el.click() })()
-        `)
-                await new Promise((r) => setTimeout(r, 300))
-                break
-            case 'click_text':
-                await wv.executeJavaScript(`
-          (() => {
-            const t = ${JSON.stringify(action.text ?? '')}
-            const el = [...document.querySelectorAll('a,button,[role="button"],input[type="submit"]')]
-              .find(e => e.textContent.trim().includes(t))
-            if (el) el.click()
-          })()
-        `)
-                await new Promise((r) => setTimeout(r, 300))
-                break
-            case 'type':
-                await wv.executeJavaScript(`
-          (() => {
-            const el = document.querySelector(${JSON.stringify(action.selector ?? '')})
-            if (el) {
-              el.focus(); el.value = ${JSON.stringify(action.text ?? '')}
-              el.dispatchEvent(new Event('input', { bubbles: true }))
-              el.dispatchEvent(new Event('change', { bubbles: true }))
-            }
-          })()
-        `)
-                break
-            case 'key':
-                wv.sendInputEvent({ type: 'keyDown', keyCode: action.key ?? 'Return' })
-                wv.sendInputEvent({ type: 'keyUp', keyCode: action.key ?? 'Return' })
-                await new Promise((r) => setTimeout(r, 200))
-                break
-        }
     }
 
     // ─── Core scan logic ──────────────────────────────────────────────────────
