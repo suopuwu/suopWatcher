@@ -284,7 +284,14 @@
                     <SiteView site={selectedSite} onScan={scanSingle} onScanned={loadSites} scanActive={scanning.has(selectedSite.id)} />
                 {/key}
             {:else}
-                <HomeScreen {sites} {scanning} onSelect={(id) => (selectedId = id)} onScan={scanSingle} onOpen={(url) => api.shell.open(url)} />
+                <HomeScreen
+                    {sites}
+                    {scanning}
+                    onSelect={(id) => (selectedId = id)}
+                    onScan={scanSingle}
+                    onOpen={(url) => api.shell.open(url)}
+                    onDelete={deleteSite}
+                />
             {/if}
         </div>
 
@@ -661,7 +668,6 @@
     }
 
     .log-site {
-        flex: 1;
         font-family: var(--font-mono);
         color: var(--text-1);
         word-break: break-all;
