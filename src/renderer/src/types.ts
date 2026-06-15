@@ -73,3 +73,10 @@ export interface ScanResult {
   hasChanges: boolean
   error?: string
 }
+
+export interface LogEntry {
+  ts: number
+  site: string
+  hasChanges: boolean
+  error?: string
+}
