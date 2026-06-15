@@ -7,6 +7,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "package": "electron-vite build && electron-builder",
+    "package:flatpak": "electron-vite build && electron-builder --linux flatpak",
     "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "devDependencies": {
@@ -29,7 +30,7 @@
     "diff": "^7.0.0"
   },
   "build": {
-    "appId": "com.suopwatcher",
+    "appId": "com.suop.watcher",
     "productName": "suopWatcher",
     "directories": {
       "buildResources": "build"
@@ -38,8 +39,24 @@
       "out/**/*"
     ],
     "linux": {
-      "target": ["AppImage", "deb"],
+      "target": ["flatpak"],
       "category": "Utility"
+    },
+    "flatpak": {
+      "license": "LICENSE",
+      "runtime": "org.freedesktop.Platform",
+      "runtimeVersion": "25.08",
+      "sdk": "org.freedesktop.Sdk",
+      "base": "org.electronjs.Electron2.BaseApp",
+      "baseVersion": "25.08",
+      "finishArgs": [
+        "--socket=x11",
+        "--socket=wayland",
+        "--share=ipc",
+        "--share=network",
+        "--device=dri",
+        "--talk-name=org.freedesktop.Notifications"
+      ]
     }
   }
 }
