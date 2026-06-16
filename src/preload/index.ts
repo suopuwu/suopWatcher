@@ -11,7 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   window: {
     minimize: () => ipcRenderer.send('window:minimize'),
     maximize: () => ipcRenderer.send('window:maximize'),
-    close: () => ipcRenderer.send('window:close')
+    close: () => ipcRenderer.send('window:close'),
+    toggleFrame: () => ipcRenderer.send('window:toggle-frame')
   },
   sites: {
     list: () => ipcRenderer.invoke('sites:list'),

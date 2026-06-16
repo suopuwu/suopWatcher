@@ -1,18 +1,22 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { initDb } from './db'
+import { initDb, getDb } from './db'
 import { registerIpcHandlers } from './ipc'
 
 function createWindow(): void {
+  const db = getDb()
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('native_frame') as { value: string } | undefined
+  const useNativeFrame: boolean = row ? JSON.parse(row.value) : true
+
   const win = new BrowserWindow({
     width: 1200,
     height: 720,
     minWidth: 820,
     minHeight: 500,
     show: false,
-    frame: false,
-    backgroundColor: '#1a1b1e',
+    frame: useNativeFrame,
+    ...(useNativeFrame ? { backgroundColor: '#1a1b1e' } : { transparent: true }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -20,6 +24,7 @@ function createWindow(): void {
     }
   })
 
+  win.removeMenu()
   win.on('ready-to-show', () => win.show())
 
   win.webContents.setWindowOpenHandler(({ url }) => {

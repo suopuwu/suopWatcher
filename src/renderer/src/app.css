@@ -27,6 +27,11 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+html.custom-frame,
+html.custom-frame body {
+  background: transparent;
+}
+
 html, body {
   height: 100%;
   background: var(--bg-0);

@@ -13,6 +13,7 @@ const w = window as Window & {
       minimize: () => void
       maximize: () => void
       close: () => void
+      toggleFrame: () => void
     }
     sites: {
       list: () => Promise<Site[]>

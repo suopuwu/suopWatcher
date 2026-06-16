@@ -29,6 +29,31 @@
     let dragStartX = 0
     let dragStartWidth = 0
 
+    let remainingX = 0
+    let remainingY = 0
+    let scrollAnimating = false
+
+    function animateScroll() {
+        const stepX = remainingX * 0.25
+        const stepY = remainingY * 0.25
+        remainingX -= stepX
+        remainingY -= stepY
+        if (webviewEl) {
+            ;(webviewEl as any).sendInputEvent({
+                type: 'mouseWheel', x: 0, y: 0,
+                deltaX: -stepX, deltaY: -stepY,
+                wheelTicksX: 0, wheelTicksY: 0,
+                hasPreciseScrollingDeltas: true, canScroll: true,
+            })
+        }
+        if (Math.abs(remainingX) > 0.5 || Math.abs(remainingY) > 0.5) {
+            requestAnimationFrame(animateScroll)
+        } else {
+            scrollAnimating = false
+        }
+    }
+
+
     const scanWvScale = $derived((scanColWidth - 30) / 1200)
 
     api.settings.get('scan_col_width').then((w) => {
@@ -93,7 +118,12 @@
             }}
             onwheel={(e) => {
                 e.preventDefault()
-                if (webviewEl) (webviewEl as any).executeJavaScript(`window.scrollBy(${e.deltaX}, ${e.deltaY})`)
+                remainingX += e.deltaX / scanWvScale
+                remainingY += e.deltaY / scanWvScale
+                if (!scrollAnimating) {
+                    scrollAnimating = true
+                    requestAnimationFrame(animateScroll)
+                }
             }}
         ></div>
     </div>

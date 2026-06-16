@@ -17,10 +17,12 @@
 
     let sites = $state<Site[]>([])
     let selectedId = $state<number | null>(null)
+    let previousId = $state<number | null>(null)
     let showAddModal = $state(false)
     let scanningAll = $state(false)
     let scanning = $state(new Set<number>())
     let toast = $state<{ msg: string; type: 'ok' | 'err' } | null>(null)
+    let nativeFrame = $state(true)
 
     // Scan state
     let scanActive = $state(false)
@@ -172,36 +174,52 @@
         selectedId = site.id
     }
 
+    async function initFrame() {
+        const val = await api.settings.get('native_frame')
+        nativeFrame = val === null ? true : (val as boolean)
+    }
+
+    $effect(() => {
+        document.documentElement.classList.toggle('custom-frame', !nativeFrame)
+    })
+
     loadSites()
     initSettings()
+    initFrame()
 </script>
 
 <svelte:window
     onmouseup={(e) => {
-        if (e.button === 3 && selectedId !== null) selectedId = null
+        if (e.button === 3 && selectedId !== null) { previousId = selectedId; selectedId = null }
+        if (e.button === 4 && selectedId === null && previousId !== null) { selectedId = previousId; previousId = null }
     }}
 />
 
-<div class="app">
-    <div class="topbar">
-        <div class="topbar-left" style="-webkit-app-region: no-drag">
+<div class="app" class:rounded={!nativeFrame}>
+    <div class="topbar" class:draggable={!nativeFrame}>
+        <div class="topbar-left" style={!nativeFrame ? '-webkit-app-region: no-drag' : ''}>
             {#if selectedId !== null}
-                <button class="btn-back" onclick={() => (selectedId = null)}>← Back</button>
+                <button class="btn-back" onclick={() => { previousId = selectedId; selectedId = null }}>← Back</button>
             {:else}
                 <span class="app-name">suopWatcher</span>
             {/if}
         </div>
 
-        <div class="topbar-actions">
+        <div class="topbar-actions" style={!nativeFrame ? '-webkit-app-region: no-drag' : ''}>
             <button class="btn-scan" onclick={scanAll} disabled={scanningAll || scanActive || sites.length === 0}>
                 {scanningAll ? '↻ Scanning…' : '↻ Scan All'}
             </button>
             <button class="btn-add" onclick={() => (showAddModal = true)}>+ Add Site</button>
-            <div class="win-controls">
-                <button class="wc-btn" onclick={() => api.window.minimize()} aria-label="Minimize">&#x2013;</button>
-                <button class="wc-btn" onclick={() => api.window.maximize()} aria-label="Maximize">&#x25A1;</button>
-                <button class="wc-btn wc-close" onclick={() => api.window.close()} aria-label="Close">&#x2715;</button>
-            </div>
+            <button class="btn-frame" onclick={() => api.window.toggleFrame()} title={nativeFrame ? 'Switch to custom title bar' : 'Switch to OS title bar'}>
+                {nativeFrame ? '⊟' : '⊞'}
+            </button>
+            {#if !nativeFrame}
+                <div class="win-controls">
+                    <button class="wc-btn" onclick={() => api.window.minimize()} aria-label="Minimize">&#x2013;</button>
+                    <button class="wc-btn" onclick={() => api.window.maximize()} aria-label="Maximize">&#x25A1;</button>
+                    <button class="wc-btn wc-close" onclick={() => api.window.close()} aria-label="Close">&#x2715;</button>
+                </div>
+            {/if}
         </div>
     </div>
 
@@ -215,7 +233,7 @@
                 <HomeScreen
                     {sites}
                     {scanning}
-                    onSelect={(id) => (selectedId = id)}
+                    onSelect={(id) => { previousId = null; selectedId = id }}
                     onScan={scanSingle}
                     onOpen={(url) => api.shell.open(url)}
                     onDelete={deleteSite}
@@ -250,6 +268,12 @@
         height: 100vh;
         display: flex;
         flex-direction: column;
+        background: var(--bg-0);
+    }
+
+    .app.rounded {
+        border-radius: 10px;
+        overflow: hidden;
     }
 
     /* ── Topbar ─────────────────────────────────────────────────── */
@@ -262,7 +286,6 @@
         border-bottom: 1px solid var(--border);
         background: var(--bg-1);
         flex-shrink: 0;
-        -webkit-app-region: drag;
     }
 
     .topbar-left {
@@ -290,12 +313,15 @@
         background: var(--accent-dim);
     }
 
+    .topbar.draggable {
+        -webkit-app-region: drag;
+    }
+
     .topbar-actions {
         display: flex;
         align-items: center;
         gap: 8px;
         padding-right: 0;
-        -webkit-app-region: no-drag;
     }
 
     .win-controls {
@@ -314,18 +340,31 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        transition:
-            background 0.1s,
-            color 0.1s;
+        transition: background 0.1s, color 0.1s;
     }
 
     .wc-btn:hover {
         background: var(--bg-hover);
         color: var(--text-0);
     }
+
     .wc-close:hover {
         background: #c42b1c;
         color: #fff;
+    }
+
+    .btn-frame {
+        background: transparent;
+        color: var(--text-2);
+        font-size: 14px;
+        padding: 4px 6px;
+        border-radius: var(--radius);
+        line-height: 1;
+    }
+
+    .btn-frame:hover {
+        background: var(--bg-hover);
+        color: var(--text-0);
     }
 
     .btn-add {

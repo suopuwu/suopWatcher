@@ -1,4 +1,6 @@
 import { ipcMain, BrowserWindow, shell } from 'electron'
+import { join } from 'path'
+import { is } from '@electron-toolkit/utils'
 import { diffLines } from 'diff'
 import { getDb } from './db'
 import { scanSite, getScanConfig, processScan } from './scanner'
@@ -24,6 +26,40 @@ export function registerIpcHandlers(): void {
     win.isMaximized() ? win.unmaximize() : win.maximize()
   })
   ipcMain.on('window:close', (e) => BrowserWindow.fromWebContents(e.sender)?.close())
+  ipcMain.on('window:toggle-frame', (e) => {
+    const win = BrowserWindow.fromWebContents(e.sender)
+    if (!win) return
+
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get('native_frame') as { value: string } | undefined
+    const current: boolean = row ? JSON.parse(row.value) : true
+    const next = !current
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run('native_frame', JSON.stringify(next))
+
+    const bounds = win.getBounds()
+    const newWin = new BrowserWindow({
+      ...bounds,
+      show: false,
+      frame: next,
+      ...(next ? { backgroundColor: '#1a1b1e' } : { transparent: true }),
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        sandbox: false,
+        webviewTag: true
+      }
+    })
+
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      newWin.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    } else {
+      newWin.loadFile(join(__dirname, '../renderer/index.html'))
+    }
+
+    newWin.removeMenu()
+    newWin.once('ready-to-show', () => {
+      newWin.show()
+      win.close()
+    })
+  })
 
   ipcMain.handle('sites:list', () => {
     return db
