@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { api } from '../lib/api'
   import type { Site, ScanAction, WatchRule } from '../types'
 
@@ -64,8 +65,7 @@
 
   let delaySeconds = $state((site.scan_delay ?? 0) / 1000)
   let actions = $state<ScanAction[]>(JSON.parse(site.actions || '[]'))
-  let saving = $state(false)
-  let saved = $state(false)
+  let autoSaved = $state(false)
   let newActionType = $state<ScanAction['type']>('wait')
 
   const ACTION_LABELS: Record<ScanAction['type'], string> = {
@@ -76,17 +76,24 @@
     key: 'Press key'
   }
 
-  async function save() {
-    saving = true
-    try {
-      await api.sites.update(site.id, Math.round(delaySeconds * 1000), $state.snapshot(actions) as ScanAction[])
-      saved = true
-      setTimeout(() => (saved = false), 2000)
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let initialized = false
+
+  $effect(() => {
+    const delay = delaySeconds
+    const snap = $state.snapshot(actions) as ScanAction[]
+    if (!initialized) { initialized = true; return }
+    if (saveTimer !== null) clearTimeout(saveTimer)
+    saveTimer = setTimeout(async () => {
+      saveTimer = null
+      await api.sites.update(site.id, Math.round(delay * 1000), snap)
       onSaved()
-    } finally {
-      saving = false
-    }
-  }
+      autoSaved = true
+      setTimeout(() => (autoSaved = false), 2000)
+    }, 600)
+  })
+
+  onDestroy(() => { if (saveTimer !== null) clearTimeout(saveTimer) })
 
   function addAction() {
     const defaults: Record<ScanAction['type'], ScanAction> = {
@@ -247,11 +254,9 @@
     {/if}
   </section>
 
-  <div class="footer">
-    <button class="save-btn" onclick={save} disabled={saving}>
-      {#if saved}✓ Saved{:else if saving}Saving…{:else}Save settings{/if}
-    </button>
-  </div>
+  {#if autoSaved}
+    <p class="autosave-status">✓ Saved</p>
+  {/if}
 </div>
 
 <style>
@@ -365,21 +370,18 @@
 
   .add-btn:hover { background: var(--bg-hover); }
 
-  .footer {
-    padding-top: 4px;
-    border-top: 1px solid var(--border);
+  .autosave-status {
+    font-size: 11px;
+    color: var(--accent);
+    text-align: right;
+    padding: 4px 0;
+    animation: fadeOut 2s ease forwards;
   }
 
-  .save-btn {
-    background: var(--accent);
-    color: #000;
-    font-weight: 600;
-    font-size: 12px;
-    padding: 6px 18px;
+  @keyframes fadeOut {
+    0%, 60% { opacity: 1; }
+    100% { opacity: 0; }
   }
-
-  .save-btn:hover:not(:disabled) { opacity: 0.85; }
-  .save-btn:disabled { opacity: 0.6; cursor: default; }
 
   .watcher-row { align-items: flex-start; }
 
