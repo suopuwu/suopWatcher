@@ -1,8 +1,38 @@
 <script lang="ts">
   import { api } from '../lib/api'
-  import type { Site, ScanAction } from '../types'
+  import type { Site, ScanAction, WatchRule } from '../types'
 
-  let { site, onSaved }: { site: Site; onSaved: () => void } = $props()
+  let {
+    site,
+    onSaved,
+    onAddWatcher,
+    pickerActiveSiteId = null,
+    rulesVersion = 0
+  }: {
+    site: Site
+    onSaved: () => void
+    onAddWatcher: (siteUrl: string) => void
+    pickerActiveSiteId?: number | null
+    rulesVersion?: number
+  } = $props()
+
+  let rules = $state<WatchRule[]>([])
+
+  $effect(() => {
+    void rulesVersion  // re-run when a rule is saved
+    api.rules.list(site.id).then((r) => (rules = r))
+  })
+
+  async function deleteRule(id: number) {
+    await api.rules.delete(id)
+    rules = rules.filter((r) => r.id !== id)
+  }
+
+  const DETECT_LABELS: Record<string, string> = {
+    content: 'content',
+    exists: 'exists',
+    count: 'child count'
+  }
 
   let delaySeconds = $state((site.scan_delay ?? 0) / 1000)
   let actions = $state<ScanAction[]>(JSON.parse(site.actions || '[]'))
@@ -129,6 +159,34 @@
       </select>
       <button class="add-btn" onclick={addAction}>+ Add</button>
     </div>
+  </section>
+
+  <section>
+    <h2>Watchers</h2>
+    <p class="hint">Click elements on the live page to watch. When rules are set, only rule-triggered changes count as "detected" — noise is silenced.</p>
+
+    {#if rules.length > 0}
+      <div class="action-list">
+        {#each rules as rule (rule.id)}
+          <div class="action-row watcher-row">
+            <div class="watcher-info">
+              <span class="watcher-label">{rule.label || `<${rule.selector}>`}</span>
+              <span class="watcher-meta">
+                {rule.selector_type === 'xpath' ? 'XPath' : 'CSS'} · watches {rule.detect.map((d) => DETECT_LABELS[d] ?? d).join(', ')}
+              </span>
+              <code class="watcher-selector">{rule.selector}</code>
+            </div>
+            <button class="remove-btn" onclick={() => deleteRule(rule.id)} aria-label="Delete watcher">✕</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
+
+    {#if pickerActiveSiteId === site.id}
+      <p class="picker-hint">Click an element on the page to watch it… (Esc to cancel)</p>
+    {:else}
+      <button class="add-btn" onclick={() => onAddWatcher(site.url)}>+ Add Watcher</button>
+    {/if}
   </section>
 
   <div class="footer">
@@ -264,4 +322,44 @@
 
   .save-btn:hover:not(:disabled) { opacity: 0.85; }
   .save-btn:disabled { opacity: 0.6; cursor: default; }
+
+  .watcher-row { align-items: flex-start; }
+
+  .watcher-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .watcher-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-0);
+  }
+
+  .watcher-meta {
+    font-size: 11px;
+    color: var(--text-2);
+  }
+
+  .watcher-selector {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-2);
+    word-break: break-all;
+  }
+
+  .picker-hint {
+    font-size: 12px;
+    color: var(--accent);
+    margin: 6px 0;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
 </style>

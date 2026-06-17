@@ -41,11 +41,48 @@ export interface DiffLine {
   count: number
 }
 
+export interface WatchRule {
+  id: number
+  website_id: number
+  label: string
+  selector: string
+  selector_type: 'css' | 'xpath'
+  detect: string[]
+  created_at: number
+}
+
+export interface RuleState {
+  exists: boolean
+  text: string
+  childCount: number
+  attrs: Record<string, string>
+}
+
+export interface RuleChange {
+  rule: WatchRule
+  previous: RuleState | null
+  current: RuleState
+  triggers: string[]
+}
+
+export interface ElementDescriptor {
+  tag: string
+  id: string | null
+  classes: string[]
+  simpleSelector: string
+  cssPath: string
+  xpath: string
+  text: string
+  childCount: number
+  attrs: Record<string, string>
+}
+
 export interface DiffResult {
   hasChanges: boolean
   latest: Snapshot
   previous: Snapshot | null
   diff: DiffLine[]
+  ruleChanges: RuleChange[]
 }
 
 export interface HistoryEntry {

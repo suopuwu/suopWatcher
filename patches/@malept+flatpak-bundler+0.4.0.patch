@@ -1,0 +1,72 @@
+diff --git a/node_modules/@malept/flatpak-bundler/index.js b/node_modules/@malept/flatpak-bundler/index.js
+index 5968fcf..3011a94 100644
+--- a/node_modules/@malept/flatpak-bundler/index.js
++++ b/node_modules/@malept/flatpak-bundler/index.js
+@@ -233,7 +233,14 @@ async function copyExports (options, manifest) {
+ async function flatpakBuilder (options, manifest, finish) {
+   const args = []
+   addCommandLineOption(args, 'arch', options.arch)
+-  addCommandLineOption(args, 'force-clean', true)
++  if (!finish) {
++    addCommandLineOption(args, 'force-clean', true)
++  }
++  // Use a per-run state dir so the OSTree build transaction from --build-only
++  // doesn't pollute the system cache; it gets cleared before --finish-only runs
++  addCommandLineOption(args, 'state-dir', path.join(options['working-dir'], '.flatpak-builder'))
++  // rofiles-fuse finalizes after --build-only, blocking --finish-only from re-entering
++  addCommandLineOption(args, 'disable-rofiles-fuse', true)
+   // If we are not compiling anything, allow building without the platform and sdk
+   // installed. Allows automated builds on a minimal environment, for example.
+   if (!manifest.modules || manifest.modules.length === 0) {
+@@ -252,6 +259,33 @@ async function flatpakBuilder (options, manifest, finish) {
+   return spawnWithLogging(options, 'flatpak-builder', args)
+ }
+ 
++async function flatpakBuildInit (options, manifest) {
++  const args = ['build-init']
++  addCommandLineOption(args, 'arch', options.arch)
++  if (manifest.base) {
++    addCommandLineOption(args, 'base', manifest.base)
++    addCommandLineOption(args, 'base-version', manifest['base-version'])
++  }
++  args.push(options['build-dir'])
++  args.push(manifest.id)
++  args.push(manifest.sdk)
++  args.push(manifest.runtime)
++  if (manifest['runtime-version']) args.push(manifest['runtime-version'])
++  return spawnWithLogging(options, 'flatpak', args)
++}
++
++async function flatpakBuildFinish (options, manifest) {
++  const args = ['build-finish']
++  if (manifest.command) addCommandLineOption(args, 'command', manifest.command)
++  if (manifest['finish-args']) {
++    for (const arg of manifest['finish-args']) {
++      args.push(arg)
++    }
++  }
++  args.push(options['build-dir'])
++  return spawnWithLogging(options, 'flatpak', args)
++}
++
+ async function flatpakBuildExport (options, manifest) {
+   const args = ['build-export']
+   addCommandLineOption(args, 'arch', options.arch)
+@@ -305,10 +339,15 @@ exports.bundle = async function (manifest, options) {
+   await ensureSdk(options, manifest)
+   await ensureBase(options, manifest)
+   await writeJsonFile(options, manifest)
+-  await flatpakBuilder(options, manifest, false)
++  // Use flatpak build-init + build-finish instead of flatpak-builder's two-phase
++  // --build-only/--finish-only. The two-phase approach breaks with flatpak-builder ≥1.4 because
++  // --build-only commits the OSTree transaction, making the build dir "already finalized" for
++  // --finish-only; and --force-clean on --finish-only tries to atomically replace the build dir
++  // which fails when copyFiles has added content to it.
++  await flatpakBuildInit(options, manifest)
+   await copyFiles(options, manifest)
+   await createSymlinks(options, manifest)
+-  await flatpakBuilder(options, manifest, true)
++  await flatpakBuildFinish(options, manifest)
+   await copyExports(options, manifest)
+   await flatpakBuildExport(options, manifest)
+   await flatpakBuildBundle(options, manifest)

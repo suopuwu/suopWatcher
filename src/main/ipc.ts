@@ -2,6 +2,43 @@ import { ipcMain, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { diffLines } from 'diff'
+
+interface DbWatchRule {
+  id: number
+  website_id: number
+  label: string
+  selector: string
+  selector_type: string
+  detect: string
+  created_at: number
+}
+
+interface RuleStateEntry {
+  exists: boolean
+  text: string
+  childCount: number
+  attrs: Record<string, string>
+}
+
+function evaluateRuleChange(
+  rule: DbWatchRule,
+  prev: RuleStateEntry | undefined,
+  curr: RuleStateEntry | undefined,
+) {
+  const detect: string[] = JSON.parse(rule.detect)
+  const triggers: string[] = []
+  if (!curr || !prev) return { rule: { ...rule, detect }, previous: prev ?? null, current: curr ?? { exists: false, text: '', childCount: 0, attrs: {} }, triggers }
+  for (const d of detect) {
+    if (d === 'exists' && (prev?.exists ?? true) !== curr.exists) triggers.push(d)
+    else if (d === 'content' && (prev?.text ?? '') !== curr.text) triggers.push(d)
+    else if (d === 'count' && (prev?.childCount ?? -1) !== curr.childCount) triggers.push(d)
+    else if (d.startsWith('attr:')) {
+      const attr = d.slice(5)
+      if ((prev?.attrs[attr] ?? '') !== (curr.attrs[attr] ?? '')) triggers.push(d)
+    }
+  }
+  return { rule: { ...rule, detect }, previous: prev ?? null, current: curr, triggers }
+}
 import { getDb } from './db'
 import { scanSite, getScanConfig, processScan } from './scanner'
 
@@ -67,13 +104,9 @@ export function registerIpcHandlers(): void {
         `SELECT w.*,
           (SELECT scanned_at FROM snapshots WHERE website_id = w.id ORDER BY scanned_at DESC LIMIT 1) AS last_scanned,
           (SELECT error FROM snapshots WHERE website_id = w.id ORDER BY scanned_at DESC LIMIT 1) AS last_error,
-          (
-            SELECT CASE WHEN COUNT(DISTINCT content_hash) > 1 THEN 1 ELSE 0 END
-            FROM (
-              SELECT content_hash FROM snapshots
-              WHERE website_id = w.id AND error IS NULL
-              ORDER BY scanned_at DESC LIMIT 2
-            )
+          COALESCE(
+            (SELECT has_changes FROM snapshots WHERE website_id = w.id AND error IS NULL ORDER BY scanned_at DESC LIMIT 1),
+            0
           ) AS has_changes
         FROM websites w
         ORDER BY w.created_at ASC`
@@ -122,9 +155,34 @@ export function registerIpcHandlers(): void {
     getScanConfig(siteId)
   )
 
-  ipcMain.handle('scan:process', async (_e, { siteId, html, error }: { siteId: number; html: string; error?: string }) =>
-    processScan(siteId, html, error)
+  ipcMain.handle('scan:process', async (_e, { siteId, html, error, ruleStates }: { siteId: number; html: string; error?: string; ruleStates?: Record<number, RuleStateEntry> }) =>
+    processScan(siteId, html, error, ruleStates)
   )
+
+  ipcMain.handle('rules:list', (_e, { siteId }: { siteId: number }) =>
+    (db.prepare('SELECT * FROM watch_rules WHERE website_id = ? ORDER BY created_at ASC').all(siteId) as DbWatchRule[])
+      .map((r) => ({ ...r, detect: JSON.parse(r.detect) }))
+  )
+
+  ipcMain.handle('rules:add', (_e, { siteId, label, selector, selector_type, detect }: { siteId: number; label: string; selector: string; selector_type: string; detect: string[] }) => {
+    const row = db.prepare('INSERT INTO watch_rules (website_id, label, selector, selector_type, detect) VALUES (?, ?, ?, ?, ?) RETURNING *')
+      .get(siteId, label, selector, selector_type, JSON.stringify(detect)) as DbWatchRule
+    return { ...row, detect: JSON.parse(row.detect) }
+  })
+
+  ipcMain.handle('rules:delete', (_e, { id }: { id: number }) =>
+    db.prepare('DELETE FROM watch_rules WHERE id = ?').run(id)
+  )
+
+  ipcMain.handle('snapshots:update-rule-states', (_e, { siteId, ruleStates }: { siteId: number; ruleStates: Record<number, RuleStateEntry> }) => {
+    const row = db.prepare('SELECT id, rule_states FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
+      { id: number; rule_states: string } | undefined
+    if (!row) return
+    const existing: Record<number, RuleStateEntry> = JSON.parse(row.rule_states || '{}')
+    db.prepare('UPDATE snapshots SET rule_states = ? WHERE id = ?').run(
+      JSON.stringify({ ...existing, ...ruleStates }), row.id
+    )
+  })
 
   ipcMain.handle('sites:update', (_e, { id, scan_delay, actions }: { id: number; scan_delay: number; actions: object[] }) => {
     db.prepare('UPDATE websites SET scan_delay = ?, actions = ? WHERE id = ?')
@@ -134,19 +192,19 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('snapshots:diff', (_e, { siteId }: { siteId: number }) => {
     const rows = db
       .prepare(
-        'SELECT id, content, content_hash, scanned_at, raw_html FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 2'
+        'SELECT id, content, content_hash, scanned_at, raw_html, rule_states, has_changes FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 2'
       )
-      .all(siteId) as Array<{ id: number; content: string; content_hash: string; scanned_at: number; raw_html: string }>
+      .all(siteId) as Array<{ id: number; content: string; content_hash: string; scanned_at: number; raw_html: string; rule_states: string; has_changes: number }>
 
     if (rows.length === 0) return null
 
     const [latest, previous] = rows
 
     if (!previous) {
-      return { hasChanges: false, latest, previous: null, diff: [] }
+      return { hasChanges: false, latest, previous: null, diff: [], ruleChanges: [] }
     }
 
-    const hasChanges = latest.content_hash !== previous.content_hash
+    const hasChanges = latest.has_changes === 1
     const changes = diffLines(previous.content, latest.content)
 
     const diff = changes.map((c) => ({
@@ -155,7 +213,14 @@ export function registerIpcHandlers(): void {
       count: c.count
     }))
 
-    return { hasChanges, latest, previous, diff }
+    const rules = db.prepare('SELECT * FROM watch_rules WHERE website_id = ? ORDER BY created_at ASC').all(siteId) as DbWatchRule[]
+    const latestStates: Record<number, RuleStateEntry> = JSON.parse(latest.rule_states || '{}')
+    const prevStates: Record<number, RuleStateEntry> = JSON.parse(previous.rule_states || '{}')
+    const ruleChanges = rules
+      .map((r) => evaluateRuleChange(r, prevStates[r.id], latestStates[r.id]))
+      .filter((rc) => rc.triggers.length > 0)
+
+    return { hasChanges, latest, previous, diff, ruleChanges }
   })
 
   ipcMain.handle('snapshots:history', (_e, { siteId }: { siteId: number }) => {

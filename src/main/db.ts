@@ -38,6 +38,18 @@ export function initDb(): void {
     )
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS watch_rules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      website_id INTEGER NOT NULL REFERENCES websites(id) ON DELETE CASCADE,
+      label TEXT NOT NULL DEFAULT '',
+      selector TEXT NOT NULL,
+      selector_type TEXT NOT NULL,
+      detect TEXT NOT NULL DEFAULT '["content"]',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    )
+  `)
+
   try {
     db.exec(`ALTER TABLE snapshots ADD COLUMN raw_html TEXT NOT NULL DEFAULT ''`)
   } catch { /* already exists */ }
@@ -46,6 +58,12 @@ export function initDb(): void {
   } catch { /* already exists */ }
   try {
     db.exec(`ALTER TABLE websites ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'`)
+  } catch { /* already exists */ }
+  try {
+    db.exec(`ALTER TABLE snapshots ADD COLUMN rule_states TEXT NOT NULL DEFAULT '{}'`)
+  } catch { /* already exists */ }
+  try {
+    db.exec(`ALTER TABLE snapshots ADD COLUMN has_changes INTEGER NOT NULL DEFAULT 0`)
   } catch { /* already exists */ }
 }
 

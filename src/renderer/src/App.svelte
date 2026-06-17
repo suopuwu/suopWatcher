@@ -1,12 +1,15 @@
 <script lang="ts">
     import { tick } from 'svelte'
     import { api } from './lib/api'
-    import type { Site, LogEntry } from './types'
+    import type { Site, LogEntry, ElementDescriptor, RuleState } from './types'
     import { executeWebviewAction } from './lib/webviewActions'
+    import { buildExtractionScript } from './lib/elementPicker'
     import HomeScreen from './components/HomeScreen.svelte'
     import SiteView from './components/SiteView.svelte'
     import ScanColumn from './components/ScanColumn.svelte'
     import AddSiteModal from './components/AddSiteModal.svelte'
+    import ElementPickerPopup from './components/ElementPickerPopup.svelte'
+    import PickerModal from './components/PickerModal.svelte'
 
     type Wv = {
         src: string
@@ -23,6 +26,12 @@
     let scanning = $state(new Set<number>())
     let toast = $state<{ msg: string; type: 'ok' | 'err' } | null>(null)
     let nativeFrame = $state(true)
+
+    // Picker state
+    let pickerDescriptor = $state<ElementDescriptor | null>(null)
+    let pickerActiveSiteId = $state<number | null>(null)
+    let pickerSiteUrl = $state('')
+    let rulesVersion = $state(0)
 
     // Scan state
     let scanActive = $state(false)
@@ -96,7 +105,16 @@
         }
 
         scanPhase = 'processing'
-        const result = await api.scan.process(siteId, html, error)
+        let ruleStates: Record<number, object> = {}
+        if (!error) {
+            const rules = await api.rules.list(siteId)
+            if (rules.length > 0) {
+                try {
+                    ruleStates = (await (webviewEl as unknown as Wv).executeJavaScript(buildExtractionScript(rules))) as Record<number, object>
+                } catch { /* non-fatal: fallback to hash-based detection */ }
+            }
+        }
+        const result = await api.scan.process(siteId, html, error, ruleStates)
         hasScanned = true
         addLogEntry({
             ts: Math.floor(Date.now() / 1000),
@@ -162,6 +180,32 @@
         setTimeout(() => (toast = null), 3000)
     }
 
+    function startPicker(siteId: number, siteUrl: string) {
+        if (scanActive) return
+        pickerActiveSiteId = siteId
+        pickerSiteUrl = siteUrl
+    }
+
+    function onPickerResult(desc: ElementDescriptor | null) {
+        pickerActiveSiteId = null
+        pickerSiteUrl = ''
+        pickerDescriptor = desc  // null = cancelled, non-null = show ElementPickerPopup
+    }
+
+    function selectSite(id: number) {
+        selectedId = id
+        if (!scanActive && webviewEl) {
+            const site = sites.find((s) => s.id === id)
+            if (site) {
+                const wv = webviewEl as unknown as Wv
+                lastScannedUrl = site.url
+                scanHostname = new URL(site.url).hostname
+                wv.src = site.url
+                wv.addEventListener('did-finish-load', () => { hasScanned = true }, { once: true })
+            }
+        }
+    }
+
     async function deleteSite(id: number) {
         await api.sites.delete(id)
         if (selectedId === id) selectedId = null
@@ -191,7 +235,11 @@
 <svelte:window
     onmouseup={(e) => {
         if (e.button === 3 && selectedId !== null) { previousId = selectedId; selectedId = null }
-        if (e.button === 4 && selectedId === null && previousId !== null) { selectedId = previousId; previousId = null }
+        if (e.button === 4 && selectedId === null && previousId !== null) {
+            const id = previousId
+            previousId = null
+            selectSite(id)
+        }
     }}
 />
 
@@ -227,13 +275,21 @@
         <div class="main">
             {#if selectedSite}
                 {#key selectedSite.id}
-                    <SiteView site={selectedSite} onScan={scanSingle} onScanned={loadSites} scanActive={scanning.has(selectedSite.id)} />
+                    <SiteView
+                        site={selectedSite}
+                        onScan={scanSingle}
+                        onScanned={loadSites}
+                        scanActive={scanning.has(selectedSite.id)}
+                        onAddWatcher={(url) => startPicker(selectedSite.id, url)}
+                        pickerActiveSiteId={pickerActiveSiteId}
+                        {rulesVersion}
+                    />
                 {/key}
             {:else}
                 <HomeScreen
                     {sites}
                     {scanning}
-                    onSelect={(id) => { previousId = null; selectedId = id }}
+                    onSelect={(id) => { previousId = null; selectSite(id) }}
                     onScan={scanSingle}
                     onOpen={(url) => api.shell.open(url)}
                     onDelete={deleteSite}
@@ -257,6 +313,30 @@
 
 {#if showAddModal}
     <AddSiteModal onAdd={onSiteAdded} onClose={() => (showAddModal = false)} />
+{/if}
+
+{#if pickerActiveSiteId !== null}
+    <PickerModal siteUrl={pickerSiteUrl} onPicked={onPickerResult} />
+{/if}
+
+{#if pickerDescriptor}
+    <ElementPickerPopup
+        descriptor={pickerDescriptor}
+        siteId={selectedId!}
+        onSave={async (label, selector, selector_type, detect) => {
+            const newRule = await api.rules.add(selectedId!, label, selector, selector_type, detect)
+            // Seed current element state as baseline so the next scan can detect changes immediately
+            if (newRule && webviewEl) {
+                try {
+                    const states = await (webviewEl as unknown as Wv).executeJavaScript(buildExtractionScript([newRule]))
+                    await api.snapshots.updateRuleStates(selectedId!, states as Record<number, RuleState>)
+                } catch { /* non-fatal: falls back to no-detect on first scan */ }
+            }
+            pickerDescriptor = null
+            rulesVersion++
+        }}
+        onCancel={() => { pickerDescriptor = null }}
+    />
 {/if}
 
 {#if toast}
@@ -437,4 +517,6 @@
             transform: translateX(-50%) translateY(0);
         }
     }
+
+
 </style>

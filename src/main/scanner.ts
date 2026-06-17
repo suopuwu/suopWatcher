@@ -260,11 +260,14 @@ export async function inlinePageAssets(html: string, pageUrl: string): Promise<s
 
 // ─── Text extraction ──────────────────────────────────────────────────────────
 
+const BLOCK_TAG_RE = /<\/?(div|p|li|tr|td|th|h[1-6]|section|article|header|footer|nav|main|aside|br|hr|blockquote|pre|dl|dt|dd|ol|ul|table|thead|tbody|tfoot)\b[^>]*>/gi
+
 function extractText(html: string): string {
     return html
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
         .replace(/<!--[\s\S]*?-->/g, '')
+        .replace(BLOCK_TAG_RE, '\n')
         .replace(/<[^>]+>/g, ' ')
         .replace(/&nbsp;/g, ' ')
         .replace(/&amp;/g, '&')
@@ -272,23 +275,70 @@ function extractText(html: string): string {
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/[ \t]+/g, ' ')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim()
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .join('\n')
+}
+
+// ─── Watch rule evaluation ────────────────────────────────────────────────────
+
+interface DbWatchRule {
+    id: number
+    detect: string
+}
+
+interface RuleState {
+    exists: boolean
+    text: string
+    childCount: number
+    attrs: Record<string, string>
+}
+
+function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, curr: RuleState | undefined): boolean {
+    if (!curr || !prev) return false
+    const detects: string[] = JSON.parse(rule.detect)
+    return detects.some((d) => {
+        if (d === 'exists') return (prev?.exists ?? true) !== curr.exists
+        if (d === 'content') return (prev?.text ?? '') !== curr.text
+        if (d === 'count') return (prev?.childCount ?? -1) !== curr.childCount
+        if (d.startsWith('attr:')) {
+            const attr = d.slice(5)
+            return (prev?.attrs[attr] ?? '') !== (curr.attrs[attr] ?? '')
+        }
+        return false
+    })
 }
 
 // ─── Snapshot storage ─────────────────────────────────────────────────────────
 
-async function saveContent(siteId: number, html: string, url: string): Promise<{ success: true; hasChanges: boolean }> {
+async function saveContent(
+    siteId: number,
+    html: string,
+    url: string,
+    ruleStates: Record<number, RuleState> = {},
+): Promise<{ success: true; hasChanges: boolean }> {
     const db = getDb()
     const [inlinedHtml, text] = await Promise.all([inlinePageAssets(html, url), Promise.resolve(extractText(html))])
     const hash = createHash('sha256').update(text).digest('hex')
-    const prev = db.prepare('SELECT content_hash FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
-        | { content_hash: string }
+    const prev = db.prepare('SELECT content_hash, rule_states FROM snapshots WHERE website_id = ? AND error IS NULL ORDER BY scanned_at DESC LIMIT 1').get(siteId) as
+        | { content_hash: string; rule_states: string }
         | undefined
-    db.prepare('INSERT INTO snapshots (website_id, content, content_hash, scanned_at, raw_html) VALUES (?, ?, ?, unixepoch(), ?)').run(
-        siteId, text, hash, inlinedHtml,
+
+    const ruleCount = (db.prepare('SELECT COUNT(*) as n FROM watch_rules WHERE website_id = ?').get(siteId) as { n: number }).n
+    let hasChanges: boolean
+    if (ruleCount > 0 && prev && Object.keys(ruleStates).length > 0) {
+        const prevStates: Record<number, RuleState> = JSON.parse(prev.rule_states || '{}')
+        const rules = db.prepare('SELECT id, detect FROM watch_rules WHERE website_id = ?').all(siteId) as DbWatchRule[]
+        hasChanges = rules.some((r) => ruleTriggered(r, prevStates[r.id], ruleStates[r.id]))
+    } else {
+        hasChanges = prev ? prev.content_hash !== hash : false
+    }
+
+    db.prepare('INSERT INTO snapshots (website_id, content, content_hash, scanned_at, raw_html, rule_states, has_changes) VALUES (?, ?, ?, unixepoch(), ?, ?, ?)').run(
+        siteId, text, hash, inlinedHtml, JSON.stringify(ruleStates), hasChanges ? 1 : 0,
     )
-    return { success: true, hasChanges: prev ? prev.content_hash !== hash : false }
+    return { success: true, hasChanges }
 }
 
 function saveError(siteId: number, message: string): { success: false; hasChanges: false; error: string } {
@@ -309,11 +359,16 @@ export function getScanConfig(siteId: number): { url: string; scan_delay: number
 }
 
 // Processes HTML captured by the renderer webview: inlines assets, stores snapshot
-export async function processScan(siteId: number, html: string, error?: string): Promise<{ success: boolean; hasChanges: boolean; error?: string }> {
+export async function processScan(
+    siteId: number,
+    html: string,
+    error?: string,
+    ruleStates?: Record<number, RuleState>,
+): Promise<{ success: boolean; hasChanges: boolean; error?: string }> {
     if (error) return saveError(siteId, error)
     try {
         const { url } = getDb().prepare('SELECT url FROM websites WHERE id = ?').get(siteId) as { url: string }
-        return await saveContent(siteId, html, url)
+        return await saveContent(siteId, html, url, ruleStates)
     } catch (err) {
         return saveError(siteId, err instanceof Error ? err.message : String(err))
     }

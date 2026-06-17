@@ -1,7 +1,18 @@
 <script lang="ts">
-  import type { DiffLine } from '../types'
+  import type { DiffLine, RuleChange } from '../types'
 
-  let { diff }: { diff: DiffLine[] } = $props()
+  let { diff, ruleChanges = [] }: { diff: DiffLine[]; ruleChanges?: RuleChange[] } = $props()
+
+  const DETECT_LABELS: Record<string, string> = {
+    content: 'content changed',
+    exists: 'appeared/disappeared',
+    count: 'child count changed'
+  }
+
+  function triggerLabel(trigger: string): string {
+    if (trigger.startsWith('attr:')) return `attr "${trigger.slice(5)}" changed`
+    return DETECT_LABELS[trigger] ?? trigger
+  }
 
   type FlatLine = { type: 'added' | 'removed' | 'unchanged'; text: string }
 
@@ -18,6 +29,18 @@
 </script>
 
 <div class="diff-wrap">
+  {#if ruleChanges.length > 0}
+    <div class="rule-banner">
+      <span class="rule-banner-title">Rules triggered</span>
+      {#each ruleChanges as rc}
+        <div class="rule-change">
+          <span class="rule-name">{rc.rule.label || rc.rule.selector}</span>
+          <span class="rule-triggers">{rc.triggers.map(triggerLabel).join(', ')}</span>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   {#if changedLines === 0}
     <p class="no-changes">No changes detected between the last two scans.</p>
   {:else}
@@ -102,5 +125,41 @@
     word-break: break-all;
     flex: 1;
     user-select: text;
+  }
+
+  .rule-banner {
+    background: var(--accent-dim, rgba(249, 115, 22, 0.12));
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rule-banner-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    margin-bottom: 2px;
+  }
+
+  .rule-change {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+    font-size: 12px;
+  }
+
+  .rule-name {
+    font-weight: 600;
+    color: var(--text-0);
+  }
+
+  .rule-triggers {
+    color: var(--text-2);
   }
 </style>

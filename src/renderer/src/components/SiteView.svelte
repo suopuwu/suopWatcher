@@ -12,11 +12,17 @@
         onScanned,
         onScan,
         scanActive = false,
+        onAddWatcher,
+        pickerActiveSiteId = null,
+        rulesVersion = 0,
     }: {
         site: Site
         onScanned: () => void
         onScan: (siteId: number) => Promise<void>
         scanActive?: boolean
+        onAddWatcher: (siteUrl: string) => void
+        pickerActiveSiteId?: number | null
+        rulesVersion?: number
     } = $props()
 
     type Tab = 'diff' | 'search' | 'history' | 'settings'
@@ -116,12 +122,12 @@
             {:else if diffMode === 'visual'}
                 <VisualDiff previous={diffResult.previous} latest={diffResult.latest} siteUrl={site.url} />
             {:else}
-                <DiffView diff={diffResult.diff} />
+                <DiffView diff={diffResult.diff} ruleChanges={diffResult.ruleChanges ?? []} />
             {/if}
         {:else if tab === 'search'}
             <SearchTab siteId={site.id} />
         {:else if tab === 'settings'}
-            <SiteSettings {site} onSaved={onScanned} />
+            <SiteSettings {site} onSaved={onScanned} {onAddWatcher} {pickerActiveSiteId} {rulesVersion} />
         {:else if tab === 'history'}
             <div class="history-tabs">
                 <div class="scan-log">

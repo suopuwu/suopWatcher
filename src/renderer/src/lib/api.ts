@@ -1,4 +1,4 @@
-import type { Site, ScanAction, DiffResult, HistoryEntry, UniqueSnapshot, SearchResult, ScanResult } from '../types'
+import type { Site, ScanAction, DiffResult, HistoryEntry, UniqueSnapshot, SearchResult, ScanResult, WatchRule, RuleState } from '../types'
 
 const w = window as Window & {
   api: {
@@ -24,13 +24,19 @@ const w = window as Window & {
     scan: {
       run: (siteId?: number) => Promise<ScanResult[]>
       getConfig: (siteId: number) => Promise<{ url: string; scan_delay: number; actions: ScanAction[] }>
-      process: (siteId: number, html: string, error?: string) => Promise<ScanResult>
+      process: (siteId: number, html: string, error?: string, ruleStates?: Record<number, RuleState>) => Promise<ScanResult>
+    }
+    rules: {
+      list: (siteId: number) => Promise<WatchRule[]>
+      add: (siteId: number, label: string, selector: string, selector_type: string, detect: string[]) => Promise<WatchRule>
+      delete: (id: number) => Promise<void>
     }
     snapshots: {
       diff: (siteId: number) => Promise<DiffResult | null>
       history: (siteId: number) => Promise<HistoryEntry[]>
       uniqueHistory: (siteId: number) => Promise<UniqueSnapshot[]>
       search: (siteId: number, pattern: string, isRegex: boolean) => Promise<SearchResult[] | { error: string }>
+      updateRuleStates: (siteId: number, ruleStates: Record<number, RuleState>) => Promise<void>
     }
   }
 }
