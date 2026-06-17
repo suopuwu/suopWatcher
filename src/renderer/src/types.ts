@@ -56,6 +56,7 @@ export interface RuleState {
   text: string
   childCount: number
   attrs: Record<string, string>
+  regexCounts?: Record<string, number>
 }
 
 export interface RuleChange {

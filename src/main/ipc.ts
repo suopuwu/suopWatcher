@@ -18,6 +18,7 @@ interface RuleStateEntry {
   text: string
   childCount: number
   attrs: Record<string, string>
+  regexCounts?: Record<string, number>
 }
 
 function evaluateRuleChange(
@@ -35,6 +36,9 @@ function evaluateRuleChange(
     else if (d.startsWith('attr:')) {
       const attr = d.slice(5)
       if ((prev?.attrs[attr] ?? '') !== (curr.attrs[attr] ?? '')) triggers.push(d)
+    } else if (d.startsWith('regex_count:')) {
+      const pattern = d.slice(12)
+      if ((prev?.regexCounts?.[pattern] ?? 0) !== (curr?.regexCounts?.[pattern] ?? 0)) triggers.push(d)
     }
   }
   return { rule: { ...rule, detect }, previous: prev ?? null, current: curr, triggers }

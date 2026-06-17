@@ -34,6 +34,34 @@
     count: 'child count'
   }
 
+  function detectLabel(d: string): string {
+    if (d.startsWith('regex_count:')) return `regex count (/${d.slice(12)}/)`
+    return DETECT_LABELS[d] ?? d
+  }
+
+  let showRegexForm = $state(false)
+  let newRegexLabel = $state('')
+  let newRegexPattern = $state('')
+  let regexFormError = $state('')
+  let savingRegex = $state(false)
+
+  async function saveRegexWatcher() {
+    regexFormError = ''
+    if (!newRegexPattern.trim()) { regexFormError = 'Enter a regex pattern'; return }
+    try { new RegExp(newRegexPattern) } catch { regexFormError = 'Invalid regex pattern'; return }
+    savingRegex = true
+    try {
+      const label = newRegexLabel.trim() || `/${newRegexPattern}/`
+      const newRule = await api.rules.add(site.id, label, '', 'page', ['regex_count:' + newRegexPattern])
+      rules = [...rules, newRule]
+      newRegexLabel = ''
+      newRegexPattern = ''
+      showRegexForm = false
+    } finally {
+      savingRegex = false
+    }
+  }
+
   let delaySeconds = $state((site.scan_delay ?? 0) / 1000)
   let actions = $state<ScanAction[]>(JSON.parse(site.actions || '[]'))
   let saving = $state(false)
@@ -51,7 +79,7 @@
   async function save() {
     saving = true
     try {
-      await api.sites.update(site.id, Math.round(delaySeconds * 1000), actions)
+      await api.sites.update(site.id, Math.round(delaySeconds * 1000), $state.snapshot(actions) as ScanAction[])
       saved = true
       setTimeout(() => (saved = false), 2000)
       onSaved()
@@ -68,15 +96,15 @@
       type: { type: 'type', selector: '', text: '' },
       key: { type: 'key', key: 'Return' }
     }
-    actions = [...actions, defaults[newActionType]]
+    actions.push(defaults[newActionType])
   }
 
   function remove(i: number) {
-    actions = actions.filter((_, idx) => idx !== i)
+    actions.splice(i, 1)
   }
 
   function update(i: number, patch: Partial<ScanAction>) {
-    actions = actions.map((a, idx) => (idx === i ? { ...a, ...patch } : a))
+    Object.assign(actions[i], patch)
   }
 </script>
 
@@ -163,7 +191,7 @@
 
   <section>
     <h2>Watchers</h2>
-    <p class="hint">Click elements on the live page to watch. When rules are set, only rule-triggered changes count as "detected" — noise is silenced.</p>
+    <p class="hint">Watch specific elements or count regex matches on the whole page. When rules are set, only rule-triggered changes count as "detected".</p>
 
     {#if rules.length > 0}
       <div class="action-list">
@@ -172,9 +200,11 @@
             <div class="watcher-info">
               <span class="watcher-label">{rule.label || `<${rule.selector}>`}</span>
               <span class="watcher-meta">
-                {rule.selector_type === 'xpath' ? 'XPath' : 'CSS'} · watches {rule.detect.map((d) => DETECT_LABELS[d] ?? d).join(', ')}
+                {rule.selector_type === 'page' ? 'Whole page' : rule.selector_type === 'xpath' ? 'XPath' : 'CSS'} · watches {rule.detect.map(detectLabel).join(', ')}
               </span>
-              <code class="watcher-selector">{rule.selector}</code>
+              {#if rule.selector_type !== 'page'}
+                <code class="watcher-selector">{rule.selector}</code>
+              {/if}
             </div>
             <button class="remove-btn" onclick={() => deleteRule(rule.id)} aria-label="Delete watcher">✕</button>
           </div>
@@ -182,10 +212,38 @@
       </div>
     {/if}
 
-    {#if pickerActiveSiteId === site.id}
-      <p class="picker-hint">Click an element on the page to watch it… (Esc to cancel)</p>
-    {:else}
-      <button class="add-btn" onclick={() => onAddWatcher(site.url)}>+ Add Watcher</button>
+    <div class="add-row">
+      {#if pickerActiveSiteId === site.id}
+        <p class="picker-hint">Click an element on the page to watch it… (Esc to cancel)</p>
+      {:else}
+        <button class="add-btn" onclick={() => onAddWatcher(site.url)}>+ Element watcher</button>
+      {/if}
+      <button class="add-btn" onclick={() => { showRegexForm = !showRegexForm; regexFormError = '' }}>+ Regex watcher</button>
+    </div>
+
+    {#if showRegexForm}
+      <div class="regex-form">
+        <input
+          class="regex-input"
+          type="text"
+          placeholder="Label (optional)"
+          bind:value={newRegexLabel}
+        />
+        <input
+          class="regex-input"
+          type="text"
+          placeholder="Regex pattern, e.g. \d+ items"
+          bind:value={newRegexPattern}
+          oninput={() => (regexFormError = '')}
+        />
+        {#if regexFormError}<span class="regex-error">{regexFormError}</span>{/if}
+        <div class="regex-form-actions">
+          <button class="add-btn" onclick={saveRegexWatcher} disabled={savingRegex}>
+            {savingRegex ? 'Saving…' : 'Save'}
+          </button>
+          <button class="add-btn" onclick={() => { showRegexForm = false; regexFormError = '' }} disabled={savingRegex}>Cancel</button>
+        </div>
+      </div>
     {/if}
   </section>
 
@@ -361,5 +419,42 @@
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+  }
+
+  .regex-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    padding: 10px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+
+  .regex-input {
+    width: 100%;
+    padding: 5px 8px;
+    background: var(--bg-0);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-0);
+    font-size: 12px;
+    box-sizing: border-box;
+  }
+
+  .regex-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .regex-error {
+    font-size: 11px;
+    color: var(--red);
+  }
+
+  .regex-form-actions {
+    display: flex;
+    gap: 6px;
   }
 </style>

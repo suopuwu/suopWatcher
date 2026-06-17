@@ -293,6 +293,7 @@ interface RuleState {
     text: string
     childCount: number
     attrs: Record<string, string>
+    regexCounts?: Record<string, number>
 }
 
 function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, curr: RuleState | undefined): boolean {
@@ -305,6 +306,10 @@ function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, curr: Rul
         if (d.startsWith('attr:')) {
             const attr = d.slice(5)
             return (prev?.attrs[attr] ?? '') !== (curr.attrs[attr] ?? '')
+        }
+        if (d.startsWith('regex_count:')) {
+            const pattern = d.slice(12)
+            return (prev?.regexCounts?.[pattern] ?? 0) !== (curr?.regexCounts?.[pattern] ?? 0)
         }
         return false
     })

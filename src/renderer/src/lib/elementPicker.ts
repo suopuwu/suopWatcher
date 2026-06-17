@@ -108,6 +108,24 @@ export function buildExtractionScript(rules: WatchRule[]): string {
 
   const blocks = rules.map((r) => {
     const id = r.id
+
+    if (r.selector_type === 'page') {
+      const patterns = r.detect.filter((d) => d.startsWith('regex_count:')).map((d) => d.slice(12))
+      return `
+        (function() {
+          try {
+            var fullText = (document.body || document.documentElement).textContent || '';
+            var regexCounts = {};
+            var patterns = ${JSON.stringify(patterns)};
+            for (var i = 0; i < patterns.length; i++) {
+              try { var m = fullText.match(new RegExp(patterns[i], 'g')); regexCounts[patterns[i]] = m ? m.length : 0; }
+              catch(e) { regexCounts[patterns[i]] = 0; }
+            }
+            states[${id}] = { exists: true, text: '', childCount: 0, attrs: {}, regexCounts: regexCounts };
+          } catch(e) { states[${id}] = { exists: true, text: '', childCount: 0, attrs: {}, regexCounts: {} }; }
+        })()`
+    }
+
     if (r.selector_type === 'xpath') {
       return `
         (function() {
@@ -116,18 +134,19 @@ export function buildExtractionScript(rules: WatchRule[]): string {
             var el = xr.singleNodeValue;
             var attrs = {};
             if (el && el.attributes) Array.from(el.attributes).forEach(function(a) { attrs[a.name] = a.value; });
-            states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs };
-          } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {} }; }
+            states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs, regexCounts: {} };
+          } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {}, regexCounts: {} }; }
         })()`
     }
+
     return `
       (function() {
         try {
           var el = document.querySelector(${JSON.stringify(r.selector)});
           var attrs = {};
           if (el && el.attributes) Array.from(el.attributes).forEach(function(a) { attrs[a.name] = a.value; });
-          states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs };
-        } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {} }; }
+          states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs, regexCounts: {} };
+        } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {}, regexCounts: {} }; }
       })()`
   })
 

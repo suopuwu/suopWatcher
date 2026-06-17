@@ -162,13 +162,13 @@
                 console.error(err)
                 errors++
             }
+            await loadSites()
         }
 
         scanning = new Set()
         scanActive = false
         scanningAll = false
         scanProgress = null
-        await loadSites()
         showToast(
             errors > 0 ? `Scan done: ${changed} changed, ${errors} failed` : `Scan done: ${changed} site${changed !== 1 ? 's' : ''} changed`,
             errors > 0 ? 'err' : 'ok',
