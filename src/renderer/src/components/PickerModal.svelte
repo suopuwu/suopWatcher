@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte'
+    import { onMount, onDestroy } from 'svelte'
     import { buildPickerScript } from '../lib/elementPicker'
     import type { ElementDescriptor } from '../types'
 
@@ -10,31 +10,44 @@
 
     let wvEl: any
     let loading = $state(true)
-    let done = false
+    let closed = false
+    let pollInterval: ReturnType<typeof setInterval> | null = null
 
     function report(d: ElementDescriptor | null) {
-        if (done) return
-        done = true
+        if (closed) return
+        closed = true
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
         onPicked(d)
     }
 
-    async function cancel() {
+    function cancel() {
         try { wvEl?.executeJavaScript('window.__pickerCancel && window.__pickerCancel()') } catch {}
         report(null)
+    }
+
+    function startPolling() {
+        if (pollInterval) return
+        pollInterval = setInterval(async () => {
+            try {
+                const raw = await wvEl.executeJavaScript('JSON.stringify(window.__pickerResult)') as string
+                const result = JSON.parse(raw)
+                if (result && result.done) {
+                    report(result.value as ElementDescriptor | null)
+                }
+            } catch {}
+        }, 200)
     }
 
     onMount(() => {
         wvEl.addEventListener('did-finish-load', async () => {
             loading = false
-            try {
-                const d = await wvEl.executeJavaScript(buildPickerScript())
-                report(d as ElementDescriptor | null)
-            } catch {
-                report(null)
-            }
+            try { await wvEl.executeJavaScript(buildPickerScript()) } catch {}
+            startPolling()
         }, { once: true })
         wvEl.src = siteUrl
     })
+
+    onDestroy(() => { if (pollInterval) clearInterval(pollInterval) })
 </script>
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') cancel() }} />

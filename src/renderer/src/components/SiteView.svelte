@@ -295,7 +295,7 @@
 
     .log-row {
         display: flex;
-        align-items: center;
+        align-items: baseline;
         gap: 16px;
         padding: 5px 20px;
         font-size: 11px;
@@ -323,8 +323,8 @@
 
     .log-err-msg {
         color: var(--red);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
     }
 </style>

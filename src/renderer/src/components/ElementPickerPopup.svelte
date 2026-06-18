@@ -20,7 +20,7 @@
   let detectContent = $state(true)
   let detectExists = $state(false)
   let detectCount = $state(false)
-  let label = $state(descriptor.text.slice(0, 40) || `<${descriptor.tag}>`)
+  let label = $state((descriptor.text ?? '').slice(0, 40) || `<${descriptor.tag}>`)
   let saving = $state(false)
 
   const selector = $derived<string>(

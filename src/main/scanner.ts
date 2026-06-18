@@ -4,7 +4,7 @@ import { request as httpRequest } from 'http'
 import { URL } from 'url'
 import { BrowserWindow } from 'electron'
 import { getDb } from './db'
-import { buildActionScript } from '../shared/actionScripts'
+import { buildActionScript, buildFindElementScript } from '../shared/actionScripts'
 
 export interface ScanAction {
     type: 'wait' | 'click_selector' | 'click_text' | 'type' | 'key'
@@ -35,8 +35,9 @@ async function renderPage(url: string, delayMs: number, actions: ScanAction[]): 
                 err ? reject(err) : resolve()
             }
             win.webContents.once('did-finish-load', () => done())
+            // ERR_ABORTED (-3) fires for every HTTP redirect — ignore it
             win.webContents.on('did-fail-load', (_e, code, desc, _u, isMain) => {
-                if (isMain) done(new Error(`${desc} (${code})`))
+                if (isMain && code !== -3) done(new Error(`${desc} (${code})`))
             })
             win.loadURL(url).catch((e) => done(e instanceof Error ? e : new Error(String(e))))
         })
@@ -56,13 +57,23 @@ async function executeAction(win: BrowserWindow, action: ScanAction): Promise<vo
             await new Promise((r) => setTimeout(r, action.ms ?? 500))
             break
         case 'click_selector':
-        case 'click_text':
-            await wc.executeJavaScript(buildActionScript(action)!)
+        case 'click_text': {
+            const script = buildFindElementScript(action)
+            if (script) {
+                const rect = await wc.executeJavaScript(script) as { x: number; y: number } | null
+                if (rect) {
+                    wc.sendInputEvent({ type: 'mouseDown', x: Math.round(rect.x), y: Math.round(rect.y), button: 'left', clickCount: 1 })
+                    wc.sendInputEvent({ type: 'mouseUp', x: Math.round(rect.x), y: Math.round(rect.y), button: 'left', clickCount: 1 })
+                }
+            }
             await new Promise((r) => setTimeout(r, 300))
             break
-        case 'type':
-            await wc.executeJavaScript(buildActionScript(action)!)
+        }
+        case 'type': {
+            const script = buildActionScript(action)
+            if (script) await wc.executeJavaScript(script)
             break
+        }
         case 'key':
             wc.sendInputEvent({ type: 'keyDown', keyCode: action.key ?? 'Return' })
             wc.sendInputEvent({ type: 'keyUp', keyCode: action.key ?? 'Return' })
@@ -122,7 +133,7 @@ async function fetchText(url: string, depth = 0): Promise<string | null> {
 
 // ─── URL utilities ────────────────────────────────────────────────────────────
 
-function resolveUrl(href: string, base: string): string | null {
+export function resolveUrl(href: string, base: string): string | null {
     try {
         if (!href || href.startsWith('data:') || href.startsWith('blob:') || href.startsWith('#') || href.startsWith('javascript:')) return null
         const u = new URL(href, base)
@@ -133,7 +144,7 @@ function resolveUrl(href: string, base: string): string | null {
     }
 }
 
-function mimeFromUrl(url: string): string {
+export function mimeFromUrl(url: string): string {
     const ext = url.split('?')[0].split('#')[0].split('.').pop()?.toLowerCase() ?? ''
     return (
         (
@@ -262,7 +273,7 @@ export async function inlinePageAssets(html: string, pageUrl: string): Promise<s
 
 const BLOCK_TAG_RE = /<\/?(div|p|li|tr|td|th|h[1-6]|section|article|header|footer|nav|main|aside|br|hr|blockquote|pre|dl|dt|dd|ol|ul|table|thead|tbody|tfoot)\b[^>]*>/gi
 
-function extractText(html: string): string {
+export function extractText(html: string): string {
     return html
         .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
         .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -283,12 +294,12 @@ function extractText(html: string): string {
 
 // ─── Watch rule evaluation ────────────────────────────────────────────────────
 
-interface DbWatchRule {
+export interface DbWatchRule {
     id: number
     detect: string
 }
 
-interface RuleState {
+export interface RuleState {
     exists: boolean
     text: string
     childCount: number
@@ -296,7 +307,7 @@ interface RuleState {
     regexCounts?: Record<string, number>
 }
 
-function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, curr: RuleState | undefined): boolean {
+export function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, curr: RuleState | undefined): boolean {
     if (!curr || !prev) return false
     const detects: string[] = JSON.parse(rule.detect)
     return detects.some((d) => {

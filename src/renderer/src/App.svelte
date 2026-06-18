@@ -16,6 +16,7 @@
         executeJavaScript(code: string): Promise<unknown>
         sendInputEvent(event: { type: string; keyCode?: string }): void
         addEventListener(ev: string, fn: (e: any) => void, opts?: { once?: boolean }): void
+        removeEventListener(ev: string, fn: (e: any) => void): void
     }
 
     let sites = $state<Site[]>([])
@@ -82,17 +83,18 @@
                 const finish = (err?: Error) => {
                     if (!done) {
                         done = true
+                        wv.removeEventListener('did-fail-load', onFailLoad)
                         err ? reject(err) : resolve()
                     }
                 }
+                // ERR_ABORTED (-3) fires for every HTTP redirect — ignore it and wait
+                // for did-finish-load on the final URL instead.
+                function onFailLoad(e: any) {
+                    if (e.isMainFrame && e.errorCode !== -3)
+                        finish(new Error(e.errorDescription || 'Failed to load'))
+                }
                 wv.addEventListener('did-finish-load', () => finish(), { once: true })
-                wv.addEventListener(
-                    'did-fail-load',
-                    (e: any) => {
-                        if (e.isMainFrame) finish(new Error(e.errorDescription || 'Failed to load'))
-                    },
-                    { once: true },
-                )
+                wv.addEventListener('did-fail-load', onFailLoad)
                 wv.src = config.url
                 lastScannedUrl = config.url
             })

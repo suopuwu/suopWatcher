@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte'
   import { api } from '../lib/api'
   import type { Site, ScanAction, WatchRule } from '../types'
+  import RecorderModal from './RecorderModal.svelte'
 
   let {
     site,
@@ -67,6 +68,13 @@
   let actions = $state<ScanAction[]>(JSON.parse(site.actions || '[]'))
   let autoSaved = $state(false)
   let newActionType = $state<ScanAction['type']>('wait')
+  let recorderOpen = $state(false)
+
+  function onRecorded(newActions: ScanAction[] | null) {
+    recorderOpen = false
+    if (!newActions || newActions.length === 0) return
+    for (const a of newActions) actions.push(a)
+  }
 
   const ACTION_LABELS: Record<ScanAction['type'], string> = {
     wait: 'Wait',
@@ -193,6 +201,7 @@
         {/each}
       </select>
       <button class="add-btn" onclick={addAction}>+ Add</button>
+      <button class="add-btn rec-btn" onclick={() => (recorderOpen = true)}>● Record</button>
     </div>
   </section>
 
@@ -258,6 +267,10 @@
     <p class="autosave-status">✓ Saved</p>
   {/if}
 </div>
+
+{#if recorderOpen}
+  <RecorderModal siteUrl={site.url} onDone={onRecorded} />
+{/if}
 
 <style>
   .settings {
@@ -369,6 +382,8 @@
   }
 
   .add-btn:hover { background: var(--bg-hover); }
+
+  .rec-btn { color: var(--red, #f44336); }
 
   .autosave-status {
     font-size: 11px;

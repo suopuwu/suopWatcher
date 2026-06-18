@@ -145,9 +145,14 @@
         <div class="log-entries">
             {#each scanLog as entry (entry.ts + entry.site)}
                 <div class="log-entry" class:log-err={!!entry.error} class:log-changed={entry.hasChanges && !entry.error}>
-                    <span class="log-site">{entry.site}</span>
-                    <span class="log-status">{entry.error ? 'error' : entry.hasChanges ? 'changed' : 'no changes'}</span>
-                    <span class="log-time">{formatLogTime(entry.ts)}</span>
+                    <div class="log-main">
+                        <span class="log-site">{entry.site}</span>
+                        <span class="log-status">{entry.error ? 'error' : entry.hasChanges ? 'changed' : 'no changes'}</span>
+                        <span class="log-time">{formatLogTime(entry.ts)}</span>
+                    </div>
+                    {#if entry.error}
+                        <div class="log-error-msg">{entry.error}</div>
+                    {/if}
                 </div>
             {:else}
                 <p class="log-empty">No scans yet</p>
@@ -303,11 +308,28 @@
 
     .log-entry {
         display: flex;
-        align-items: flex-start;
-        gap: 6px;
+        flex-direction: column;
+        gap: 2px;
         padding: 2px 6px;
         font-size: 11px;
         line-height: 1.3;
+    }
+
+    .log-main {
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .log-error-msg {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        color: var(--red);
+        white-space: pre-wrap;
+        word-break: break-all;
+        user-select: text;
+        padding: 1px 0 2px;
+        opacity: 0.9;
     }
 
     .log-status {
