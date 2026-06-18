@@ -112,6 +112,15 @@ export function buildPickerScript(): string {
   })()`
 }
 
+// Shared JS snippet: given a variable `el` already in scope (possibly null),
+// writes the standard state object into states[id].
+function elementStateSnippet(id: number): string {
+  return `
+    var attrs = {};
+    if (el && el.attributes) Array.from(el.attributes).forEach(function(a) { attrs[a.name] = a.value; });
+    states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs, regexCounts: {} };`
+}
+
 export function buildExtractionScript(rules: WatchRule[]): string {
   if (rules.length === 0) return '({})'
 
@@ -141,20 +150,17 @@ export function buildExtractionScript(rules: WatchRule[]): string {
           try {
             var xr = document.evaluate(${JSON.stringify(r.selector)}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
             var el = xr.singleNodeValue;
-            var attrs = {};
-            if (el && el.attributes) Array.from(el.attributes).forEach(function(a) { attrs[a.name] = a.value; });
-            states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs, regexCounts: {} };
+            ${elementStateSnippet(id)}
           } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {}, regexCounts: {} }; }
         })()`
     }
 
+    // css (default)
     return `
       (function() {
         try {
           var el = document.querySelector(${JSON.stringify(r.selector)});
-          var attrs = {};
-          if (el && el.attributes) Array.from(el.attributes).forEach(function(a) { attrs[a.name] = a.value; });
-          states[${id}] = { exists: !!el, text: el ? (el.textContent || '').trim().slice(0, 5000) : '', childCount: el ? el.children.length : 0, attrs: attrs, regexCounts: {} };
+          ${elementStateSnippet(id)}
         } catch(e) { states[${id}] = { exists: false, text: '', childCount: 0, attrs: {}, regexCounts: {} }; }
       })()`
   })

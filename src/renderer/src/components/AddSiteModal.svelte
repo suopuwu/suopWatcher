@@ -37,7 +37,6 @@
 <div
   class="overlay"
   onclick={onClose}
-  onkeydown={(e) => e.key === 'Escape' && onClose()}
   role="dialog"
   aria-modal="true"
   tabindex="-1"

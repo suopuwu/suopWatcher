@@ -45,23 +45,15 @@
         recorded = recorded.filter((_, idx) => idx !== i)
     }
 
-    function finish() {
+    function close(result: ScanAction[] | null) {
         if (closed) return
         closed = true
-        cleanup()
-        onDone(recorded.length > 0 ? recorded : null)
-    }
-
-    function cancel() {
-        if (closed) return
-        closed = true
-        cleanup()
-        onDone(null)
-    }
-
-    function cleanup() {
         if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+        onDone(result)
     }
+
+    const finish = () => close(recorded.length > 0 ? recorded : null)
+    const cancel = () => close(null)
 
     onMount(() => {
         wvEl.addEventListener('did-finish-load', onPageLoad)
@@ -81,7 +73,7 @@
         wvEl.src = siteUrl
     })
 
-    onDestroy(cleanup)
+    onDestroy(() => { if (pollInterval) { clearInterval(pollInterval); pollInterval = null } })
 </script>
 
 <svelte:window onkeydown={(e) => { if (e.key === 'Escape') cancel() }} />

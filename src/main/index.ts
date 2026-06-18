@@ -30,10 +30,7 @@ function createWindow(): void {
   })
 
   win.removeMenu()
-  win.on('ready-to-show', () => {
-    win.setIcon(icon)
-    win.show()
-  })
+  win.on('ready-to-show', () => win.show())
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)

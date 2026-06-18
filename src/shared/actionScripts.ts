@@ -3,11 +3,10 @@ export function buildActionScript(action: {
     selector?: string
     text?: string
 }): string | null {
-    switch (action.type) {
-        case 'type': {
-            const sel = action.selector ?? ''
-            if (!sel) return '(()=>{})()'
-            return `(() => { try {
+    if (action.type !== 'type') return null
+    const sel = action.selector ?? ''
+    if (!sel) return '(()=>{})()'
+    return `(() => { try {
   const el = document.querySelector(${JSON.stringify(sel)})
   if (el) {
     el.focus(); el.value = ${JSON.stringify(action.text ?? '')}
@@ -15,10 +14,6 @@ export function buildActionScript(action: {
     el.dispatchEvent(new Event('change', { bubbles: true }))
   }
 } catch(e) {} })()`
-        }
-        default:
-            return null
-    }
 }
 
 // Returns a script that evaluates to {x, y} (element center) or null if not found.
@@ -28,20 +23,19 @@ export function buildFindElementScript(action: {
     selector?: string
     text?: string
 }): string | null {
-    switch (action.type) {
-        case 'click_selector': {
-            const sel = action.selector ?? ''
-            if (!sel) return null
-            return `(() => { try {
+    if (action.type === 'click_selector') {
+        const sel = action.selector ?? ''
+        if (!sel) return null
+        return `(() => { try {
   const el = document.querySelector(${JSON.stringify(sel)})
   if (!el) return null
   const r = el.getBoundingClientRect()
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
 } catch(e) { return null } })()`
-        }
-        case 'click_text': {
-            const t = action.text ?? ''
-            return `(() => {
+    }
+    if (action.type === 'click_text') {
+        const t = action.text ?? ''
+        return `(() => {
   const t = ${JSON.stringify(t)}
   const el = [...document.querySelectorAll('a,button,[role="button"],input[type="submit"]')]
     .find(e => (e.textContent ?? '').trim().includes(t))
@@ -49,8 +43,6 @@ export function buildFindElementScript(action: {
   const r = el.getBoundingClientRect()
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
 })()`
-        }
-        default:
-            return null
     }
+    return null
 }

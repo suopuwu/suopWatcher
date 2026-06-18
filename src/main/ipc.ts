@@ -2,6 +2,8 @@ import { ipcMain, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { diffLines } from 'diff'
+import { getDb } from './db'
+import { scanSite, getScanConfig, processScan } from './scanner'
 
 interface DbWatchRule {
   id: number
@@ -43,8 +45,6 @@ function evaluateRuleChange(
   }
   return { rule: { ...rule, detect }, previous: prev ?? null, current: curr, triggers }
 }
-import { getDb } from './db'
-import { scanSite, getScanConfig, processScan } from './scanner'
 
 export function registerIpcHandlers(): void {
   const db = getDb()
@@ -142,7 +142,6 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('scan:run', async (_e, { siteId }: { siteId?: number }) => {
-    // Scan All: runs all sites silently in background BrowserWindows
     const sites = siteId
       ? (db.prepare('SELECT id, url FROM websites WHERE id = ?').all(siteId) as { id: number; url: string }[])
       : (db.prepare('SELECT id, url FROM websites').all() as { id: number; url: string }[])
@@ -289,10 +288,11 @@ export function registerIpcHandlers(): void {
             if (m[0].length === 0) re.lastIndex++
           }
         } else {
-          let idx = line.toLowerCase().indexOf(lowerPattern)
+          const lower = line.toLowerCase()
+          let idx = lower.indexOf(lowerPattern)
           while (idx !== -1) {
             matches.push({ start: idx, end: idx + lowerPattern.length })
-            idx = line.toLowerCase().indexOf(lowerPattern, idx + 1)
+            idx = lower.indexOf(lowerPattern, idx + 1)
           }
         }
 

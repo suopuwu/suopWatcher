@@ -53,11 +53,13 @@
     try { new RegExp(newRegexPattern) } catch { regexFormError = 'Invalid regex pattern'; return }
     savingRegex = true
     try {
-      const label = newRegexLabel.trim() || `/${newRegexPattern}/`
-      const newRule = await api.rules.add(site.id, label, '', 'page', ['regex_count:' + newRegexPattern])
+      const newRule = await api.rules.add(
+        site.id,
+        newRegexLabel.trim() || `/${newRegexPattern}/`,
+        '', 'page', ['regex_count:' + newRegexPattern]
+      )
       rules = [...rules, newRule]
-      newRegexLabel = ''
-      newRegexPattern = ''
+      newRegexLabel = newRegexPattern = ''
       showRegexForm = false
     } finally {
       savingRegex = false
@@ -73,7 +75,7 @@
   function onRecorded(newActions: ScanAction[] | null) {
     recorderOpen = false
     if (!newActions || newActions.length === 0) return
-    for (const a of newActions) actions.push(a)
+    actions.push(...newActions)
   }
 
   const ACTION_LABELS: Record<ScanAction['type'], string> = {
@@ -143,56 +145,54 @@
     <h2>Pre-scan actions</h2>
     <p class="hint">Actions replayed in order before capturing the page. Use to dismiss overlays, expand sections, or apply filters.</p>
 
-    {#if actions.length > 0}
-      <div class="action-list">
-        {#each actions as action, i (i)}
-          <div class="action-row">
-            <span class="action-type">{ACTION_LABELS[action.type]}</span>
+    <div class="action-list">
+      {#each actions as action, i (i)}
+        <div class="action-row">
+          <span class="action-type">{ACTION_LABELS[action.type]}</span>
 
-            {#if action.type === 'wait'}
-              <input
-                type="number" min="0" step="100" placeholder="ms"
-                value={action.ms ?? 500}
-                oninput={(e) => update(i, { ms: Number((e.target as HTMLInputElement).value) })}
-              />
-              <span class="unit">ms</span>
-            {:else if action.type === 'click_selector'}
-              <input
-                type="text" placeholder="CSS selector, e.g. #load-more"
-                value={action.selector ?? ''}
-                oninput={(e) => update(i, { selector: (e.target as HTMLInputElement).value })}
-              />
-            {:else if action.type === 'click_text'}
-              <input
-                type="text" placeholder="Button/link text"
-                value={action.text ?? ''}
-                oninput={(e) => update(i, { text: (e.target as HTMLInputElement).value })}
-              />
-            {:else if action.type === 'type'}
-              <input
-                type="text" placeholder="CSS selector"
-                value={action.selector ?? ''}
-                oninput={(e) => update(i, { selector: (e.target as HTMLInputElement).value })}
-              />
-              <span class="unit">←</span>
-              <input
-                type="text" placeholder="Text to type"
-                value={action.text ?? ''}
-                oninput={(e) => update(i, { text: (e.target as HTMLInputElement).value })}
-              />
-            {:else if action.type === 'key'}
-              <input
-                type="text" placeholder="Key name, e.g. Return, Tab, Escape"
-                value={action.key ?? 'Return'}
-                oninput={(e) => update(i, { key: (e.target as HTMLInputElement).value })}
-              />
-            {/if}
+          {#if action.type === 'wait'}
+            <input
+              type="number" min="0" step="100" placeholder="ms"
+              value={action.ms ?? 500}
+              oninput={(e) => update(i, { ms: Number((e.target as HTMLInputElement).value) })}
+            />
+            <span class="unit">ms</span>
+          {:else if action.type === 'click_selector'}
+            <input
+              type="text" placeholder="CSS selector, e.g. #load-more"
+              value={action.selector ?? ''}
+              oninput={(e) => update(i, { selector: (e.target as HTMLInputElement).value })}
+            />
+          {:else if action.type === 'click_text'}
+            <input
+              type="text" placeholder="Button/link text"
+              value={action.text ?? ''}
+              oninput={(e) => update(i, { text: (e.target as HTMLInputElement).value })}
+            />
+          {:else if action.type === 'type'}
+            <input
+              type="text" placeholder="CSS selector"
+              value={action.selector ?? ''}
+              oninput={(e) => update(i, { selector: (e.target as HTMLInputElement).value })}
+            />
+            <span class="unit">←</span>
+            <input
+              type="text" placeholder="Text to type"
+              value={action.text ?? ''}
+              oninput={(e) => update(i, { text: (e.target as HTMLInputElement).value })}
+            />
+          {:else if action.type === 'key'}
+            <input
+              type="text" placeholder="Key name, e.g. Return, Tab, Escape"
+              value={action.key ?? 'Return'}
+              oninput={(e) => update(i, { key: (e.target as HTMLInputElement).value })}
+            />
+          {/if}
 
-            <button class="remove-btn" onclick={() => remove(i)} aria-label="Remove action">✕</button>
-          </div>
-        {/each}
-      </div>
-    {/if}
+          <button class="remove-btn" onclick={() => remove(i)} aria-label="Remove action">✕</button>
+        </div>
+      {/each}
+    </div>
 
     <div class="add-row">
       <select bind:value={newActionType}>
@@ -209,24 +209,22 @@
     <h2>Watchers</h2>
     <p class="hint">Watch specific elements or count regex matches on the whole page. When rules are set, only rule-triggered changes count as "detected".</p>
 
-    {#if rules.length > 0}
-      <div class="action-list">
-        {#each rules as rule (rule.id)}
-          <div class="action-row watcher-row">
-            <div class="watcher-info">
-              <span class="watcher-label">{rule.label || `<${rule.selector}>`}</span>
-              <span class="watcher-meta">
-                {rule.selector_type === 'page' ? 'Whole page' : rule.selector_type === 'xpath' ? 'XPath' : 'CSS'} · watches {rule.detect.map(detectLabel).join(', ')}
-              </span>
-              {#if rule.selector_type !== 'page'}
-                <code class="watcher-selector">{rule.selector}</code>
-              {/if}
-            </div>
-            <button class="remove-btn" onclick={() => deleteRule(rule.id)} aria-label="Delete watcher">✕</button>
+    <div class="action-list">
+      {#each rules as rule (rule.id)}
+        <div class="action-row watcher-row">
+          <div class="watcher-info">
+            <span class="watcher-label">{rule.label || `<${rule.selector}>`}</span>
+            <span class="watcher-meta">
+              {rule.selector_type === 'page' ? 'Whole page' : rule.selector_type === 'xpath' ? 'XPath' : 'CSS'} · watches {rule.detect.map(detectLabel).join(', ')}
+            </span>
+            {#if rule.selector_type !== 'page'}
+              <code class="watcher-selector">{rule.selector}</code>
+            {/if}
           </div>
-        {/each}
-      </div>
-    {/if}
+          <button class="remove-btn" onclick={() => deleteRule(rule.id)} aria-label="Delete watcher">✕</button>
+        </div>
+      {/each}
+    </div>
 
     <div class="add-row">
       {#if pickerActiveSiteId === site.id}

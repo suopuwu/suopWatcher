@@ -25,7 +25,9 @@
     )
   )
 
-  const changedLines = $derived(lines.filter((l) => l.type !== 'unchanged').length)
+  const addedCount = $derived(lines.filter((l) => l.type === 'added').length)
+  const removedCount = $derived(lines.filter((l) => l.type === 'removed').length)
+  const changedLines = $derived(addedCount + removedCount)
 </script>
 
 <div class="diff-wrap">
@@ -45,8 +47,8 @@
     <p class="no-changes">No changes detected between the last two scans.</p>
   {:else}
     <div class="diff-stats">
-      <span class="added">+{lines.filter((l) => l.type === 'added').length} lines</span>
-      <span class="removed">−{lines.filter((l) => l.type === 'removed').length} lines</span>
+      <span class="added">+{addedCount} lines</span>
+      <span class="removed">−{removedCount} lines</span>
     </div>
     <div class="diff">
       {#each lines as line, i (i)}
@@ -95,7 +97,6 @@
 
   .line {
     display: flex;
-    gap: 0;
   }
 
   .line.added {

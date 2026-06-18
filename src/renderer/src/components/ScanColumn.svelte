@@ -62,9 +62,9 @@
 
     function formatLogTime(ts: number): string {
         const diff = Date.now() - ts * 1000
-        if (diff < 60000) return 'just now'
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`
+        if (diff < 60_000) return 'just now'
+        for (const [limit, divisor, unit] of [[3_600_000, 60_000, 'm'], [86_400_000, 3_600_000, 'h']] as const)
+            if (diff < limit) return `${Math.floor(diff / divisor)}${unit} ago`
         return new Date(ts * 1000).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     }
 </script>
@@ -364,17 +364,15 @@
         margin-top: 1px;
     }
 
-    .spin {
-        display: inline-block;
-        animation: spin 0.8s linear infinite;
-        font-size: 18px;
-        color: var(--accent);
-    }
-
+    .spin,
     .spin-small {
         display: inline-block;
         animation: spin 0.8s linear infinite;
         color: var(--accent);
+    }
+
+    .spin {
+        font-size: 18px;
     }
 
     @keyframes spin {

@@ -52,13 +52,12 @@
 
     async function initSettings() {
         const log = await api.settings.get('scan_log')
-        if (Array.isArray(log)) scanLog = log as LogEntry[]
+        if (Array.isArray(log)) scanLog = log
     }
 
     function addLogEntry(entry: LogEntry) {
         scanLog = [entry, ...scanLog].slice(0, 200)
-        const serializableLog = scanLog.map((entry) => ({ ...entry }))
-        api.settings.set('scan_log', serializableLog)
+        api.settings.set('scan_log', $state.snapshot(scanLog))
     }
 
     function clearLog() {
@@ -70,7 +69,8 @@
 
     async function scanOne(siteId: number): Promise<{ success: boolean; hasChanges: boolean }> {
         const config = await api.scan.getConfig(siteId)
-        scanHostname = new URL(config.url).hostname
+        const hostname = new URL(config.url).hostname
+        scanHostname = hostname
         scanPhase = 'loading'
 
         const wv = webviewEl as unknown as Wv
@@ -120,7 +120,7 @@
         hasScanned = true
         addLogEntry({
             ts: Math.floor(Date.now() / 1000),
-            site: new URL(config.url).hostname,
+            site: hostname,
             hasChanges: result.hasChanges,
             error: result.success ? undefined : (error ?? 'Processing failed'),
         })
@@ -222,7 +222,7 @@
 
     async function initFrame() {
         const val = await api.settings.get('native_frame')
-        nativeFrame = val === null ? true : (val as boolean)
+        nativeFrame = (val ?? true) as boolean
     }
 
     $effect(() => {

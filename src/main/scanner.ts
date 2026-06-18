@@ -14,8 +14,6 @@ export interface ScanAction {
     key?: string // key — Electron key code, e.g. 'Return', 'Tab', 'Escape'
 }
 
-// ─── BrowserWindow-based page rendering (background / Scan All) ──────────────
-
 async function renderPage(url: string, delayMs: number, actions: ScanAction[]): Promise<string> {
     const win = new BrowserWindow({
         width: 1280,
@@ -82,8 +80,6 @@ async function executeAction(win: BrowserWindow, action: ScanAction): Promise<vo
     }
 }
 
-// ─── HTTP helpers (used for asset inlining) ───────────────────────────────────
-
 interface HttpResult {
     status: number
     contentType: string
@@ -131,8 +127,6 @@ async function fetchText(url: string, depth = 0): Promise<string | null> {
     }
 }
 
-// ─── URL utilities ────────────────────────────────────────────────────────────
-
 export function resolveUrl(href: string, base: string): string | null {
     try {
         if (!href || href.startsWith('data:') || href.startsWith('blob:') || href.startsWith('#') || href.startsWith('javascript:')) return null
@@ -167,8 +161,6 @@ export function mimeFromUrl(url: string): string {
     )
 }
 
-// ─── Asset fetching ───────────────────────────────────────────────────────────
-
 const MAX_ASSET_BYTES = 1024 * 1024
 
 async function asDataUri(url: string, cache: Map<string, string>, depth = 0): Promise<string | null> {
@@ -191,8 +183,6 @@ async function asDataUri(url: string, cache: Map<string, string>, depth = 0): Pr
     }
 }
 
-// ─── CSS inlining ─────────────────────────────────────────────────────────────
-
 async function inlineCssUrls(css: string, base: string, cache: Map<string, string>): Promise<string> {
     const urlRe = /url\(\s*(['"]?)([^'"\s)]+)\1\s*\)/g
     const toFetch = new Set<string>()
@@ -210,7 +200,8 @@ async function inlineCssUrls(css: string, base: string, cache: Map<string, strin
     })
 }
 
-// ─── Full page inlining ───────────────────────────────────────────────────────
+// Matches <link> tags that have both rel="stylesheet" and href="...", in either attribute order
+const CSS_LINK_RE = /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["']([^"']+)["'])[^>]*>/gi
 
 export async function inlinePageAssets(html: string, pageUrl: string): Promise<string> {
     const cache = new Map<string, string>()
@@ -218,14 +209,11 @@ export async function inlinePageAssets(html: string, pageUrl: string): Promise<s
 
     // 1. External stylesheets → <style> blocks
     const cssLinks: Array<{ tag: string; href: string }> = []
-    for (const re of [/<link\b[^>]*\brel=["']stylesheet["'][^>]*>/gi, /<link\b[^>]*\bhref=["']([^"']+)["'][^>]*\brel=["']stylesheet["'][^>]*>/gi]) {
-        let m: RegExpExecArray | null
-        while ((m = re.exec(html)) !== null) {
-            const hm = /\bhref=["']([^"']+)["']/.exec(m[0])
-            const resolved = hm ? resolveUrl(hm[1], pageUrl) : null
-            if (resolved && !cssLinks.find((l) => l.href === resolved)) {
-                cssLinks.push({ tag: m[0], href: resolved })
-            }
+    let m: RegExpExecArray | null
+    while ((m = CSS_LINK_RE.exec(html)) !== null) {
+        const resolved = resolveUrl(m[1], pageUrl)
+        if (resolved && !cssLinks.find((l) => l.href === resolved)) {
+            cssLinks.push({ tag: m[0], href: resolved })
         }
     }
     for (const { tag, href } of cssLinks) {
@@ -269,8 +257,6 @@ export async function inlinePageAssets(html: string, pageUrl: string): Promise<s
     return result
 }
 
-// ─── Text extraction ──────────────────────────────────────────────────────────
-
 const BLOCK_TAG_RE = /<\/?(div|p|li|tr|td|th|h[1-6]|section|article|header|footer|nav|main|aside|br|hr|blockquote|pre|dl|dt|dd|ol|ul|table|thead|tbody|tfoot)\b[^>]*>/gi
 
 export function extractText(html: string): string {
@@ -291,8 +277,6 @@ export function extractText(html: string): string {
         .filter(Boolean)
         .join('\n')
 }
-
-// ─── Watch rule evaluation ────────────────────────────────────────────────────
 
 export interface DbWatchRule {
     id: number
@@ -325,8 +309,6 @@ export function ruleTriggered(rule: DbWatchRule, prev: RuleState | undefined, cu
         return false
     })
 }
-
-// ─── Snapshot storage ─────────────────────────────────────────────────────────
 
 async function saveContent(
     siteId: number,
@@ -361,8 +343,6 @@ function saveError(siteId: number, message: string): { success: false; hasChange
     getDb().prepare("INSERT INTO snapshots (website_id, content, content_hash, scanned_at, error) VALUES (?, '', '', unixepoch(), ?)").run(siteId, message)
     return { success: false, hasChanges: false, error: message }
 }
-
-// ─── Main scan ────────────────────────────────────────────────────────────────
 
 // Returns scan config for renderer-side webview scanning
 export function getScanConfig(siteId: number): { url: string; scan_delay: number; actions: ScanAction[] } {

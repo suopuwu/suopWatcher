@@ -50,21 +50,12 @@ export function initDb(): void {
     )
   `)
 
-  try {
-    db.exec(`ALTER TABLE snapshots ADD COLUMN raw_html TEXT NOT NULL DEFAULT ''`)
-  } catch { /* already exists */ }
-  try {
-    db.exec(`ALTER TABLE websites ADD COLUMN scan_delay INTEGER NOT NULL DEFAULT 0`)
-  } catch { /* already exists */ }
-  try {
-    db.exec(`ALTER TABLE websites ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'`)
-  } catch { /* already exists */ }
-  try {
-    db.exec(`ALTER TABLE snapshots ADD COLUMN rule_states TEXT NOT NULL DEFAULT '{}'`)
-  } catch { /* already exists */ }
-  try {
-    db.exec(`ALTER TABLE snapshots ADD COLUMN has_changes INTEGER NOT NULL DEFAULT 0`)
-  } catch { /* already exists */ }
+  const migrate = (sql: string): void => { try { db.exec(sql) } catch { /* already exists */ } }
+  migrate(`ALTER TABLE snapshots ADD COLUMN raw_html TEXT NOT NULL DEFAULT ''`)
+  migrate(`ALTER TABLE websites ADD COLUMN scan_delay INTEGER NOT NULL DEFAULT 0`)
+  migrate(`ALTER TABLE websites ADD COLUMN actions TEXT NOT NULL DEFAULT '[]'`)
+  migrate(`ALTER TABLE snapshots ADD COLUMN rule_states TEXT NOT NULL DEFAULT '{}'`)
+  migrate(`ALTER TABLE snapshots ADD COLUMN has_changes INTEGER NOT NULL DEFAULT 0`)
 }
 
 export function getDb(): Database.Database {

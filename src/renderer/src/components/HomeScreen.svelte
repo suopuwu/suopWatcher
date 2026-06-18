@@ -42,6 +42,10 @@
         return `${Math.floor(diff / 86400000)}d ago`
     }
 
+    function onEnter(fn: () => void) {
+        return (e: KeyboardEvent) => { if (e.key === 'Enter') fn() }
+    }
+
     function hostname(url: string): string {
         try {
             return new URL(url).hostname
@@ -50,15 +54,13 @@
         }
     }
 
-    const groups = $derived(
-        (() => {
-            const g: Record<Category, Site[]> = { changed: [], ok: [], error: [], new: [] }
-            for (const s of sites) g[categorize(s)].push(s)
-            return (['changed', 'error', 'ok', 'new'] as Category[])
-                .map((cat) => ({ cat, ...catConfig[cat], sites: g[cat] }))
-                .filter((grp) => grp.sites.length > 0)
-        })(),
-    )
+    const groups = $derived.by(() => {
+        const g: Record<Category, Site[]> = { changed: [], ok: [], error: [], new: [] }
+        for (const s of sites) g[categorize(s)].push(s)
+        return (['changed', 'error', 'ok', 'new'] as Category[])
+            .map((cat) => ({ cat, ...catConfig[cat], sites: g[cat] }))
+            .filter((grp) => grp.sites.length > 0)
+    })
 </script>
 
 <div class="home">
@@ -87,16 +89,8 @@
                                     role="button"
                                     tabindex="0"
                                     class="card-btn"
-                                    onclick={(e) => {
-                                        e.stopPropagation()
-                                        onOpen(site.url)
-                                    }}
-                                    onkeydown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.stopPropagation()
-                                            onOpen(site.url)
-                                        }
-                                    }}
+                                    onclick={(e) => { e.stopPropagation(); onOpen(site.url) }}
+                                    onkeydown={onEnter(() => onOpen(site.url))}
                                     aria-label="Open {site.name || hostname(site.url)} in browser">↗</span
                                 >
                                 <span
@@ -104,32 +98,16 @@
                                     tabindex="0"
                                     class="card-btn"
                                     aria-disabled={scanning.has(site.id)}
-                                    onclick={(e) => {
-                                        e.stopPropagation()
-                                        if (!scanning.has(site.id)) onScan(site.id)
-                                    }}
-                                    onkeydown={(e) => {
-                                        if (e.key === 'Enter' && !scanning.has(site.id)) {
-                                            e.stopPropagation()
-                                            onScan(site.id)
-                                        }
-                                    }}
+                                    onclick={(e) => { e.stopPropagation(); if (!scanning.has(site.id)) onScan(site.id) }}
+                                    onkeydown={onEnter(() => { if (!scanning.has(site.id)) onScan(site.id) })}
                                     aria-label="Scan {site.name || hostname(site.url)}">↻</span
                                 >
                                 <span
                                     role="button"
                                     tabindex="0"
                                     class="card-btn delete-card-btn"
-                                    onclick={(e) => {
-                                        e.stopPropagation()
-                                        onDelete(site.id)
-                                    }}
-                                    onkeydown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.stopPropagation()
-                                            onDelete(site.id)
-                                        }
-                                    }}
+                                    onclick={(e) => { e.stopPropagation(); onDelete(site.id) }}
+                                    onkeydown={onEnter(() => onDelete(site.id))}
                                     aria-label="Delete {site.name || hostname(site.url)}">×</span
                                 >
                             </button>
